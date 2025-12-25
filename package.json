@@ -1,0 +1,38 @@
+{
+  "name": "@amp/sdk-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AMP SDK workspace for TypeScript and Python SDKs - Agent Management Platform",
+  "scripts": {
+    "generate": "stainless generate",
+    "generate:ts": "stainless generate --target typescript",
+    "generate:py": "stainless generate --target python",
+    "test": "npm run test:ts && npm run test:py",
+    "test:ts": "cd packages/typescript && npm test",
+    "test:py": "cd packages/python && pytest",
+    "lint": "cd packages/typescript && npm run lint",
+    "build": "cd packages/typescript && npm run build",
+    "publish:ts": "cd packages/typescript && npm publish",
+    "publish:py": "cd packages/python && twine upload dist/*"
+  },
+  "devDependencies": {
+    "stainless-api": "^0.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "amp",
+    "agent-management-platform",
+    "observability",
+    "telemetry",
+    "opentelemetry",
+    "ai",
+    "llm",
+    "sdk",
+    "kore"
+  ],
+  "author": "Kore.ai",
+  "license": "MIT"
+}
+
