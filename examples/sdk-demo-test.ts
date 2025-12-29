@@ -4,7 +4,9 @@
 
 import { AMP } from '../packages/core/src';
 
-const API_KEY = 'sk-acp-694aa356-e40311186d9540e588fc28a9ed6e800e';
+//const API_KEY = 'sk-acp-694aa356-e40311186d9540e588fc28a9ed6e800e';
+const API_KEY = 'sk-amp-694aa356-e9d3f04d291e4f2d'
+//onst API_KEY'https://dev-amp.kore.ai/'
 const suffix = 'test2-' + Date.now().toString(36).slice(-4);
 
 async function main() {
@@ -14,7 +16,7 @@ async function main() {
 
   const amp = new AMP({
     apiKey: API_KEY,
-    baseURL: 'http://localhost:3004',
+    baseURL: 'https://dev-amp.kore.ai/',
     debug: true,
   });
 
