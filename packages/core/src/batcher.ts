@@ -6,6 +6,14 @@
 import { TraceData, TelemetryPayload, TelemetryResponse, AMPConfig } from './types';
 import { Logger, retry } from './utils';
 import { Trace } from './spans';
+import {
+  DEFAULT_BASE_URL,
+  INGEST_ENDPOINT,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_BATCH_TIMEOUT,
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_TIMEOUT,
+} from './constants';
 
 /**
  * HTTP client interface (can be Stainless-generated or custom)
@@ -66,6 +74,7 @@ export class BatchProcessor {
   private config: {
     apiKey: string;
     baseURL: string;
+    ingestEndpoint: string;
     batchSize: number;
     batchTimeout: number;
     maxRetries: number;
@@ -74,13 +83,14 @@ export class BatchProcessor {
   constructor(config: AMPConfig, httpClient?: HTTPClient) {
     this.config = {
       apiKey: config.apiKey,
-      baseURL: config.baseURL || 'https://api.amp.kore.ai',
-      batchSize: config.batchSize || 100,
-      batchTimeout: config.batchTimeout || 5000,
-      maxRetries: config.maxRetries || 3,
+      baseURL: (config.baseURL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
+      ingestEndpoint: config.ingestEndpoint || INGEST_ENDPOINT,
+      batchSize: config.batchSize || DEFAULT_BATCH_SIZE,
+      batchTimeout: config.batchTimeout || DEFAULT_BATCH_TIMEOUT,
+      maxRetries: config.maxRetries || DEFAULT_MAX_RETRIES,
     };
 
-    this.httpClient = httpClient || new FetchHTTPClient(config.timeout || 30000);
+    this.httpClient = httpClient || new FetchHTTPClient(config.timeout || DEFAULT_TIMEOUT);
     this.logger = new Logger(config.debug || false);
 
     // Auto-flush on process exit (Node.js)
@@ -154,10 +164,14 @@ export class BatchProcessor {
   private async sendBatch(traces: TraceData[]): Promise<TelemetryResponse> {
     const payload: TelemetryPayload = { traces };
 
+    // Debug only: dump actual payload sent to ingest API
+    this.logger.log(`POST ${this.config.baseURL}${this.config.ingestEndpoint}`);
+    this.logger.log(`Payload: ${JSON.stringify(payload, null, 2)}`);
+
     return retry(
       async () => {
         return this.httpClient.post(
-          `${this.config.baseURL}/api/v1/telemetry`,
+          `${this.config.baseURL}${this.config.ingestEndpoint}`,
           payload,
           {
             'X-API-Key': this.config.apiKey,

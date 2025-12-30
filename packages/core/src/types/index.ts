@@ -276,24 +276,25 @@ export interface LLMAttributes {
   'gen_ai.output.type'?: GenAIOutputType;
   
   // ============================================
-  // OTEL STANDARD - Messages (Opt-In for content capture)
+  // OTEL GENAI STANDARD - Messages (Opt-In for content capture)
+  // Accepts both OTEL strict format (with parts) and simple format (with content)
   // ============================================
-  /** OTEL Opt-In: Input messages (JSON array following OTEL schema) */
-  'gen_ai.input.messages'?: string | Array<{ role: string; parts: Array<{ type: string; content?: string }> }>;
-  /** OTEL Opt-In: Output messages (JSON array following OTEL schema) */
-  'gen_ai.output.messages'?: string | Array<{ role: string; parts: Array<{ type: string; content?: string }>; finish_reason?: string }>;
-  /** OTEL Opt-In: System instructions/prompt */
+  /** OTEL GenAI: Input messages */
+  'gen_ai.input.messages'?: string | Array<{ role: string; content?: string; parts?: Array<{ type: string; content?: string }> }>;
+  /** OTEL GenAI: Output messages */
+  'gen_ai.output.messages'?: string | Array<{ role: string; content?: string; parts?: Array<{ type: string; content?: string }>; finish_reason?: string }>;
+  /** OTEL GenAI: System instructions/prompt */
   'gen_ai.system_instructions'?: string | Array<{ type: string; content: string }>;
   
   // ============================================
-  // AMP CUSTOM - Messages (Backend extracts both formats)
+  // OPENINFERENCE STANDARD - Messages (Arize/Phoenix compatible)
   // ============================================
-  /** AMP Custom: Input messages JSON (extracted from events or attributes) */
-  llm_input_messages?: string;
-  /** AMP Custom: Output messages JSON (extracted from events or attributes) */
-  llm_output_messages?: string;
-  /** AMP Custom: System instructions (extracted from events or attributes) */
-  llm_system_instructions?: string;
+  /** OpenInference: Input messages (array or JSON string) */
+  'llm.input_messages'?: string | Array<{ role: string; content: string; name?: string }>;
+  /** OpenInference: Output messages (array or JSON string) */
+  'llm.output_messages'?: string | Array<{ role: string; content: string; name?: string }>;
+  /** OpenInference: System instructions */
+  'llm.system_instructions'?: string;
   
   // ============================================
   // AMP CUSTOM - Cost & Cache
@@ -660,7 +661,7 @@ export interface SpanEvent {
   /** Event timestamp (ISO 8601) */
   timestamp: string;
   /** Event attributes */
-  attributes?: Record<string, string | number | boolean>;
+  attributes?: Record<string, string | number | boolean | unknown[] | Record<string, unknown>>;
 }
 
 // ============================================
@@ -775,8 +776,10 @@ export interface TelemetryResponse {
 export interface AMPConfig {
   /** API key (required) */
   apiKey: string;
-  /** Base URL (default: https://api.amp.kore.ai) */
+  /** Base URL (default: https://amp.kore.ai) */
   baseURL?: string;
+  /** Ingestion endpoint path (default: /ingestion/api/v1/telemetry) */
+  ingestEndpoint?: string;
   /** Account ID (optional) */
   accountId?: string;
   /** Project ID (optional) */
@@ -831,8 +834,6 @@ export interface SpanOptions {
 export interface SessionOptions {
   /** Custom session ID (auto-generated if not provided) */
   sessionId?: string;
-  /** User ID for the session */
-  userId?: string;
   /** Additional metadata */
   metadata?: Record<string, string | number | boolean>;
 }

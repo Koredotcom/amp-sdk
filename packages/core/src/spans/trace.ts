@@ -3,7 +3,7 @@
  * Represents a complete operation (e.g., user request → response)
  */
 
-import { TraceData, SpanStatus, TraceOptions, SpanOptions, SpanType } from '../types';
+import { TraceData, SpanStatus, TraceOptions, SpanOptions } from '../types';
 import { generateTraceId, generateSessionId, now } from '../utils';
 import { Span } from './span';
 

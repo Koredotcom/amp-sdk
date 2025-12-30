@@ -15,13 +15,17 @@ import {
 import { Trace, Span } from './spans';
 import { BatchProcessor, FetchHTTPClient } from './batcher';
 import { Logger, generateSessionId } from './utils';
+import {
+  DEFAULT_BASE_URL,
+  INGEST_ENDPOINT,
+  TRANSCRIPT_ENDPOINT,
+} from './constants';
 
 /**
  * Session - For multi-turn conversations
  */
 export class Session {
   private _sessionId: string;
-  private _userId?: string;
   private _metadata: Record<string, string | number | boolean>;
   private _client: AMP;
   private _conversationTurn: number = 0;
@@ -29,7 +33,6 @@ export class Session {
   constructor(client: AMP, options: SessionOptions = {}) {
     this._client = client;
     this._sessionId = options.sessionId || generateSessionId();
-    this._userId = options.userId;
     this._metadata = options.metadata || {};
   }
 
@@ -108,7 +111,8 @@ export class AMP {
     }
 
     this.config = {
-      baseURL: 'https://api.amp.kore.ai',
+      baseURL: DEFAULT_BASE_URL,
+      ingestEndpoint: INGEST_ENDPOINT,
       batchSize: 100,
       batchTimeout: 5000,
       maxRetries: 3,
@@ -116,6 +120,8 @@ export class AMP {
       debug: false,
       ...config,
     };
+    // Normalize baseURL (remove trailing slashes)
+    this.config.baseURL = this.config.baseURL!.replace(/\/+$/, '');
 
     this.logger = new Logger(this.config.debug);
     this.httpClient = new FetchHTTPClient(this.config.timeout);
@@ -183,7 +189,7 @@ export class AMP {
    *
    * @example
    * ```typescript
-   * const session = amp.session({ userId: 'user-123' });
+   * const session = amp.session({ sessionId: 'my-session-123' });
    *
    * // Turn 1
    * const trace1 = session.trace('turn-1');
@@ -215,7 +221,7 @@ export class AMP {
     };
 
     return this.httpClient.post(
-      `${this.config.baseURL}/api/v1/telemetry?format=transcript`,
+      `${this.config.baseURL}${TRANSCRIPT_ENDPOINT}`,
       payload,
       {
         'X-API-Key': this.config.apiKey,
@@ -236,7 +242,7 @@ export class AMP {
     };
 
     return this.httpClient.post(
-      `${this.config.baseURL}/api/v1/telemetry`,
+      `${this.config.baseURL}${this.config.ingestEndpoint}`,
       payload,
       {
         'X-API-Key': this.config.apiKey,

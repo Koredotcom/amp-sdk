@@ -74,3 +74,16 @@ export {
   Logger,
 } from './utils';
 
+// Constants
+export {
+  DEFAULT_BASE_URL,
+  INGEST_ENDPOINT,
+  TRANSCRIPT_ENDPOINT,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_BATCH_TIMEOUT,
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_TIMEOUT,
+  SDK_NAME,
+  SDK_VERSION,
+} from './constants';
+

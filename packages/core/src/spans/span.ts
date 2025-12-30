@@ -194,18 +194,27 @@ export class Span {
 
   /**
    * Set input and output messages
+   * Sets both OTEL GenAI and OpenInference standard keys for compatibility
    */
   setMessages(inputMessages: LLMMessage[], outputMessages: LLMMessage[]): this {
-    this._attributes['llm_input_messages'] = JSON.stringify(inputMessages);
-    this._attributes['llm_output_messages'] = JSON.stringify(outputMessages);
+    // OTEL GenAI standard keys (primary - OpenLLMetry/Traceloop compatible)
+    this._attributes['gen_ai.input.messages'] = inputMessages;
+    this._attributes['gen_ai.output.messages'] = outputMessages;
+    // OpenInference standard keys (fallback - Arize/Phoenix compatible)
+    this._attributes['llm.input_messages'] = inputMessages;
+    this._attributes['llm.output_messages'] = outputMessages;
     return this;
   }
 
   /**
    * Set system instructions/prompt
+   * Sets both OTEL GenAI and OpenInference standard keys for compatibility
    */
   setSystemPrompt(systemPrompt: string): this {
-    this._attributes['llm_system_instructions'] = systemPrompt;
+    // OTEL GenAI standard key (primary)
+    this._attributes['gen_ai.system_instructions'] = systemPrompt;
+    // OpenInference standard key (fallback)
+    this._attributes['llm.system_instructions'] = systemPrompt;
     return this;
   }
 
@@ -215,15 +224,16 @@ export class Span {
 
   /**
    * Set tool/function call info
+   * Pass objects directly - serialization happens at transport layer
    */
   setTool(name: string, params?: any, result?: any): this {
     this._type = 'tool';
     this._attributes['tool.name'] = name;
     if (params !== undefined) {
-      this._attributes['tool.parameters'] = typeof params === 'string' ? params : JSON.stringify(params);
+      this._attributes['tool.parameters'] = params;
     }
     if (result !== undefined) {
-      this._attributes['tool.result'] = typeof result === 'string' ? result : JSON.stringify(result);
+      this._attributes['tool.result'] = result;
     }
     return this;
   }
@@ -314,9 +324,10 @@ export class Span {
 
   /**
    * Set retrieved context
+   * Pass array directly - serialization happens at transport layer
    */
   setRetrievedContext(context: Array<{ doc_id: string; content: string; score: number }>): this {
-    this._attributes['retrieved_context'] = JSON.stringify(context);
+    this._attributes['retrieved_context'] = context;
     this._attributes['context_length'] = context.reduce((sum, doc) => sum + doc.content.length, 0);
     this._attributes['top_score'] = Math.max(...context.map(doc => doc.score));
     return this;
@@ -407,14 +418,6 @@ export class Span {
     return this;
   }
 
-  /**
-   * Set user ID
-   */
-  setUserId(userId: string): this {
-    this._attributes['user.id'] = userId;
-    return this;
-  }
-
   // ============================================
   // GENERIC ATTRIBUTE METHODS
   // ============================================
@@ -458,7 +461,7 @@ export class Span {
   /**
    * Add a span event
    */
-  addEvent(name: string, attributes?: Record<string, string | number | boolean>): this {
+  addEvent(name: string, attributes?: Record<string, string | number | boolean | unknown[] | Record<string, unknown>>): this {
     this._events.push({
       name,
       timestamp: now(),
@@ -486,8 +489,8 @@ export class Span {
    */
   recordInferenceDetails(inputMessages: LLMMessage[], outputMessages: LLMMessage[]): this {
     return this.addEvent('gen_ai.client.inference.operation.details', {
-      'gen_ai.input.messages': JSON.stringify(inputMessages),
-      'gen_ai.output.messages': JSON.stringify(outputMessages),
+      'gen_ai.input.messages': inputMessages,
+      'gen_ai.output.messages': outputMessages,
     });
   }
 
