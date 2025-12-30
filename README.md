@@ -46,7 +46,7 @@ AMP SDK is built on **OpenTelemetry (OTEL) GenAI Semantic Conventions**, ensurin
 4. **Stores** data in optimized time-series databases
 5. **Streams** updates to the AMP dashboard for live monitoring
 
-### Supported Trace Types
+### Supported Span Types
 
 | Type | Description | Use Case |
 |------|-------------|----------|
@@ -54,7 +54,7 @@ AMP SDK is built on **OpenTelemetry (OTEL) GenAI Semantic Conventions**, ensurin
 | **Tool** | Function/tool execution | API calls, database queries, external services |
 | **RAG** | Retrieval-augmented generation | Vector search, document retrieval, context injection |
 | **Agent** | Agent lifecycle events | Agent creation, task execution, decision points |
-| **Orchestration** | Chain/workflow execution | Multi-step pipelines, LangChain, CrewAI workflows |
+| **Orchestration** | Chain/workflow execution | Multi-step pipelines, LangChain, LangGraph workflows |
 | **Custom** | Any other operation | Custom business logic, integrations |
 
 ---
@@ -63,11 +63,11 @@ AMP SDK is built on **OpenTelemetry (OTEL) GenAI Semantic Conventions**, ensurin
 
 ### Prerequisites
 
-- **Node.js** 18+ or **Python** 3.9+
+- **Node.js** 18+
 - An AMP account and API key
 
 **Getting Your API Key**:
-1. Go to [https://dev-amp.kore.ai/](https://dev-amp.kore.ai/) (production URL will be updated later)
+1. Go to <a href="https://amp.kore.ai/" target="_blank">https://amp.kore.ai/</a>
 2. Sign up or log in to your account
 3. Create a new project or select an existing one
 4. Navigate to **Settings** → **API Keys**
@@ -85,13 +85,6 @@ yarn add @amp/sdk
 
 # pnpm
 pnpm add @amp/sdk
-```
-
-### Python
-
-```bash
-# Coming soon
-pip install amp-sdk
 ```
 
 ### Verify Installation
@@ -138,7 +131,7 @@ await amp.flush();
 
 - [Configure the SDK](#configuration) for your environment
 - [Explore Examples](#examples) for different use cases
-- [View Your Traces](https://dev-amp.kore.ai/dashboard) in the AMP dashboard
+- <a href="https://amp.kore.ai/dashboard" target="_blank">View Your Traces</a> in the AMP dashboard
 
 ---
 
@@ -156,7 +149,7 @@ await amp.flush();
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `baseURL` | `string` | `'https://dev-amp.kore.ai'` | AMP API endpoint (production URL will be updated) |
+| `baseURL` | `string` | `'https://amp.kore.ai'` | AMP API endpoint |
 | `accountId` | `string` | Auto-extracted | Account ID (from API key) |
 | `projectId` | `string` | Auto-extracted | Project ID (from API key) |
 
@@ -181,26 +174,15 @@ await amp.flush();
 | `debug` | `boolean` | `false` | Enable console logging |
 | `printTraces` | `boolean` | `false` | Print trace JSON before sending |
 
-### Configuration Examples
-
-#### Local Development
+### Configuration Example
 
 ```typescript
 const amp = new AMP({
   apiKey: process.env.AMP_API_KEY!,
-  debug: true,                        // Enable debug logs
-  batchSize: 10,                      // Smaller batches for testing
-});
-```
-
-#### Production
-
-```typescript
-const amp = new AMP({
-  apiKey: process.env.AMP_API_KEY!,
-  baseURL: 'https://dev-amp.kore.ai',  // Production URL will be updated later
-  batchSize: 100,                      // Larger batches for efficiency
-  maxRetries: 5,                       // More retries for reliability
+  // baseURL: 'https://amp.kore.ai',  // Override base URL if needed
+  batchSize: 100,
+  maxRetries: 3,
+  debug: false,                        // Set to true for debug logs
 });
 ```
 
@@ -209,7 +191,7 @@ const amp = new AMP({
 ```bash
 # .env
 AMP_API_KEY=sk-amp-xxxxxx
-AMP_BASE_URL=https://dev-amp.kore.ai  # Production URL will be updated later
+AMP_BASE_URL=https://amp.kore.ai
 AMP_BATCH_SIZE=100
 AMP_DEBUG=false
 ```
@@ -227,15 +209,118 @@ const amp = new AMP({
 
 ## Core Concepts
 
-### Traces, Spans, and Sessions
+### Understanding the Hierarchy: Session → Trace → Span
 
+AMP uses a three-level hierarchy to organize your AI observability data:
+
+- **Session** - A group of related traces (e.g., multi-turn conversation)
 - **Trace** - A single operation (e.g., "user query", "RAG pipeline")
 - **Span** - A unit of work within a trace (e.g., "LLM call", "vector search")
-- **Session** - A group of related traces (e.g., multi-turn conversation)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  SESSION                                                    │
+│  Groups related traces together (e.g., a conversation)      │
+│                                                             │
+│  ┌─────────────────────┐    ┌─────────────────────┐        │
+│  │  TRACE 1            │    │  TRACE 2            │        │
+│  │  (Turn 1)           │    │  (Turn 2)           │        │
+│  │                     │    │                     │        │
+│  │  ┌─────┐ ┌─────┐   │    │  ┌─────┐ ┌─────┐   │        │
+│  │  │Span │ │Span │   │    │  │Span │ │Span │   │        │
+│  │  │RAG  │ │LLM  │   │    │  │Tool │ │LLM  │   │        │
+│  │  └─────┘ └─────┘   │    │  └─────┘ └─────┘   │        │
+│  └─────────────────────┘    └─────────────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Session
+
+A **Session** groups related traces together, enabling you to track multi-turn conversations, user journeys, or any sequence of related operations.
+
+**When to use sessions:**
+- Multi-turn chatbot conversations
+- User workflows spanning multiple requests
+- A/B testing cohorts
+- Any scenario where you need to correlate traces
+
+**Creating a Session ID:**
+
+You have two options for session IDs:
+
+1. **Use your own ID** - Pass an existing ID from your database (e.g., conversation ID, user session ID)
+2. **Generate on demand** - Create a unique ID when starting a new session
+
+```typescript
+// Option 1: Use existing ID from your database
+const session = amp.session({
+  sessionId: existingConversationId,  // From your DB
+  userId: 'user-123',
+});
+
+// Option 2: Generate a new session ID
+const session = amp.session({
+  sessionId: `chat-${Date.now()}`,    // Generated on demand
+  userId: 'user-123',
+});
+
+// Create traces within the session
+const trace1 = session.trace('turn-1');
+// ... spans ...
+trace1.end();
+
+const trace2 = session.trace('turn-2');
+// ... spans ...
+trace2.end();
+```
+
+**Alternative: Pass sessionId directly to trace**
+
+```typescript
+const sessionId = 'my-session-123';
+
+// All traces with the same sessionId are grouped together
+const trace1 = amp.trace('turn-1', { sessionId });
+const trace2 = amp.trace('turn-2', { sessionId });
+```
+
+### Trace
+
+A **Trace** represents a single operation or request (e.g., one user query, one API call). Each trace contains one or more spans.
+
+```typescript
+const trace = amp.trace('user-query', {
+  sessionId: 'session-123',           // Optional: group with other traces
+  metadata: { userId: 'u123' },       // Optional: trace-level metadata
+});
+```
+
+### Span
+
+A **Span** is the smallest unit of work within a trace. Spans represent individual operations like LLM calls, tool executions, or vector searches.
+
+Spans can be linked together using `parentSpanId` to create a hierarchy within a trace. The first span in a trace has `parentSpanId: null`.
+
+```typescript
+// First span (no parent)
+const ragSpan = trace.startRAGSpan('vector-search', 'pinecone');
+ragSpan.end();
+
+// Second span (no parent - sibling to first)
+const llmSpan = trace.startLLMSpan('chat-completion', 'openai', 'gpt-4');
+llmSpan.setTokens(150, 75);
+llmSpan.end();
+
+// Child span (with parent)
+const childSpan = trace.startSpan('post-process', {
+  parentSpanId: llmSpan.spanId
+});
+childSpan.end();
+```
 
 ### OpenTelemetry Compliance
 
-AMP SDK follows [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/):
+AMP SDK follows <a href="https://opentelemetry.io/docs/specs/semconv/gen-ai/" target="_blank">OpenTelemetry GenAI Semantic Conventions</a>:
 
 - ✅ Standard attribute names (`gen_ai.usage.input_tokens`, `gen_ai.tool.name`)
 - ✅ Standard span kinds (`INTERNAL`, `CLIENT`, `SERVER`)
@@ -259,63 +344,107 @@ AMP SDK follows [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry
 
 The SDK supports OpenTelemetry GenAI Semantic Conventions along with industry-standard extensions. Below is a comprehensive list of all supported attributes categorized by span type.
 
+### Session Attributes
+
+**See:** [Example 5: Session Management](#example-5-session-management-multi-turn) | For detailed working example, see <a href="examples/session-example.ts" target="_blank">`examples/session-example.ts`</a>
+
+**Note:** ✅ = Standard OTEL attribute, ⚠️ = Custom attribute (SDK extension)
+
+| SDK Method | OTEL Attribute | Type | Description |
+|------------|----------------|------|-------------|
+| `session({ sessionId, userId, metadata })` | `session.id` | String | ✅ **OTEL Standard** - Session identifier (provided by user or auto-generated). Standard OTEL semantic convention for session tracking. |
+| `session({ sessionId, userId, metadata })` | `user.id` | String | ✅ **OTEL Standard** - User identifier. Standard OTEL service resource attribute. |
+| `session({ sessionId, userId, metadata })` | `session.metadata` | Object | ⚠️ **Custom** - Session-level metadata. Custom attribute (not part of OTEL standard). |
+
+### Trace Attributes
+
+**See:** [Example 5: Session Management](#example-5-session-management-multi-turn) | For detailed working example, see <a href="examples/session-example.ts" target="_blank">`examples/session-example.ts`</a>
+
+**Note:** ⚠️ = Custom attribute (SDK extension)
+
+| SDK Method | OTEL Attribute | Type | Description |
+|------------|----------------|------|-------------|
+| `trace(name, { metadata })` | `trace.metadata` | Object | ⚠️ **Custom** - Trace-level metadata. Custom attribute (not part of OTEL standard). |
+
 ### Common Attributes (All Spans)
 
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
 | `setAttribute(key, value)` | Custom attributes | Any | Add custom metadata to any span |
 | `addEvent(name, attrs)` | Events | Object | Add timeline events to span |
-| Auto-set | `span.name` | String | Span name (auto-set by SDK) |
-| Auto-set | `span.kind` | String | Span kind: INTERNAL, CLIENT, SERVER |
-| Auto-set | `span.status` | Object | Span status: OK, ERROR |
+| Auto set by span Constructor startLlmSpan('span name') (set when call startSpan( 'span.name')) | `span.name` | String | Span name (auto-set by SDK) |
+| optional  | `span.kind` | String | Span kind per OTEL spec: INTERNAL (internal operation), CLIENT (outbound request), SERVER (inbound request), PRODUCER (message producer), CONSUMER (message consumer). **Note:** This SDK uses `span.type` (llm, tool, rag, agent, orchestration, custom) instead of `span.kind` for categorization. |
+| Required (set by SDK API)  | `span.type` | String | Span type: llm, tool, rag, agent, orchestration, custom (used for categorization instead of span.kind) |
+| setStatus()  | `span.status` | Object | Span status: OK, ERROR |
 
 ### LLM Span Attributes
 
+**See:** [Example 1: Simple LLM Chat](#example-1-simple-llm-chat) | For detailed working example, see <a href="examples/llm-span.ts" target="_blank">`examples/llm-span.ts`</a>
+
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
-| `setTokens(input, output)` | `gen_ai.usage.input_tokens` | Number | Input token count |
-| `setTokens(input, output)` | `gen_ai.usage.output_tokens` | Number | Output token count |
 | `startLLMSpan(name, provider, model)` | `gen_ai.system` | String | LLM provider (openai, anthropic, etc.) |
 | `startLLMSpan(name, provider, model)` | `gen_ai.request.model` | String | Model name (gpt-4, claude-3, etc.) |
+| `setTokens(input, output)` | `gen_ai.usage.input_tokens` | Number | Input token count |
+| `setTokens(input, output)` | `gen_ai.usage.output_tokens` | Number | Output token count |
 | `setOperation(op)` | `gen_ai.operation.name` | String | Operation: chat, text_completion, embeddings |
-| `setLLMInputMessages(msgs)` | `gen_ai.prompt` | Array | Input messages (user, system, assistant) |
-| `setLLMOutputMessages(msgs)` | `gen_ai.completion` | Array | Output messages (assistant responses) |
+| `setMessages(inputMsgs, outputMsgs)` | `gen_ai.input.messages` | Array | Input messages sent to model |
+| `setMessages(inputMsgs, outputMsgs)` | `gen_ai.output.messages` | Array | Output messages from model |
+| `setLLMParams({...})` | `gen_ai.request.temperature` | Number | Temperature parameter (0-2) |
+| `setLLMParams({...})` | `gen_ai.request.top_p` | Number | Top-p sampling parameter |
+| `setLLMParams({...})` | `gen_ai.request.max_tokens` | Number | Maximum tokens to generate |
 | `setLLMResponse(reason, id)` | `gen_ai.response.finish_reason` | String | stop, length, content_filter, tool_calls |
 | `setLLMResponse(reason, id)` | `gen_ai.response.id` | String | Response/completion ID |
-| `setAttribute('gen_ai.request.temperature', val)` | `gen_ai.request.temperature` | Number | Temperature parameter (0-2) |
-| `setAttribute('gen_ai.request.top_p', val)` | `gen_ai.request.top_p` | Number | Top-p sampling parameter |
-| `setAttribute('gen_ai.request.max_tokens', val)` | `gen_ai.request.max_tokens` | Number | Maximum tokens to generate |
-| `setAttribute('gen_ai.request.frequency_penalty', val)` | `gen_ai.request.frequency_penalty` | Number | Frequency penalty |
-| `setAttribute('gen_ai.request.presence_penalty', val)` | `gen_ai.request.presence_penalty` | Number | Presence penalty |
+| `setCost(costUsd)` | `span_cost_usd` | Number | Cost in USD |
+
+**`setMessages()` usage:**
+```typescript
+span.setMessages(
+  // inputMsgs: Messages sent TO the model
+  [
+    { role: 'system', content: 'You are a helpful assistant.' },
+    { role: 'user', content: 'Hello!' }
+  ],
+  // outputMsgs: Messages received FROM the model
+  [
+    { role: 'assistant', content: 'Hi there! How can I help?' }
+  ]
+);
+```
 
 ### Tool Span Attributes
 
+**See:** [Example 3: Tool Execution](#example-3-tool-execution) | For detailed working example, see <a href="examples/tool-span.ts" target="_blank">`examples/tool-span.ts`</a>
+
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
-| `startToolSpan(name, toolName)` | `gen_ai.tool.name` | String | Name of the tool/function |
-| `setToolType(type)` | `gen_ai.tool.type` | String | function, extension, datastore, api |
-| `setToolParameters(params)` | `tool_input` | Object | Tool input parameters |
-| `setToolResult(result)` | `tool_output` | Object | Tool execution result |
-| `setToolStatus(status, latency)` | `tool_status` | String | success, error, timeout |
-| `setToolStatus(status, latency)` | `tool_duration_ms` | Number | Execution time in milliseconds |
-| `setAttribute('tool_description', val)` | `tool_description` | String | Tool purpose/description |
+| `startToolSpan(name, toolName)` | `tool.name` | String | Name of the tool/function |
+| `setTool(name, params, result)` | `tool.parameters` | Object | Tool input parameters |
+| `setTool(name, params, result)` | `tool.result` | Object | Tool execution result |
+| `setToolInfo(type, description)` | `tool.type` | String | function, extension, datastore, api |
+| `setToolInfo(type, description)` | `gen_ai.tool.description` | String | Tool purpose/description |
+| `setToolStatus(status, latencyMs)` | `tool.status` | String | SUCCESS, ERROR, TIMEOUT |
+| `setToolStatus(status, latencyMs)` | `tool.latency_ms` | Number | Execution time in milliseconds |
 
 ### RAG Span Attributes
 
+**See:** [Example 2: RAG Pipeline](#example-2-rag-pipeline) | For detailed working example, see <a href="examples/rag-span.ts" target="_blank">`examples/rag-span.ts`</a>
+
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
-| `startRAGSpan(name, db, method)` | `db.system` | String | Vector DB: pinecone, weaviate, chromadb |
-| `startRAGSpan(name, db, method)` | `retrieval.method` | String | vector_search, keyword_search, hybrid |
+| `startRAGSpan(name, dbSystem)` | `vector_db` | String | Vector DB: pinecone, weaviate, chromadb |
+| `setRAG(vectorDb, method, docsRetrieved)` | `retrieval.method` | String | vector_search, keyword_search, hybrid |
+| `setRAG(vectorDb, method, docsRetrieved)` | `documents_retrieved` | Number | Number of documents retrieved |
 | `setUserQuery(query)` | `user_query` | String | User's search query |
-| `setRetrievedContext(docs)` | `retrieved_context` | Array | Retrieved documents with scores |
-| `setAttribute('retrieval.top_k', val)` | `retrieval.top_k` | Number | Number of results requested |
-| `setAttribute('context_count', val)` | `context_count` | Number | Actual documents retrieved |
-| `setAttribute('retrieval_latency_ms', val)` | `retrieval_latency_ms` | Number | Retrieval time in milliseconds |
-| `setAttribute('relevance_scores', val)` | `relevance_scores` | Array | Similarity/relevance scores |
-| `setAttribute('db.collection', val)` | `db.collection` | String | Collection/index name |
-| `setAttribute('db.operation', val)` | `db.operation` | String | query, insert, update, delete |
+| `setRetrievedContext(docs[])` | `retrieved_context` | Array | Retrieved documents with scores |
+| `setRetrievedContext(docs[])` | `top_score` | Number | Highest relevance score |
+| `setRAGParams({topK, ...})` | `retrieval.top_k` | Number | Number of results requested |
+| `setRAGParams({similarityThreshold})` | `similarity.threshold` | Number | Minimum similarity threshold |
+| `setRAGParams({indexName})` | `index_name` | String | Collection/index name |
 
 ### Agent Span Attributes
+
+**See:** [Example 4: Multi-Agent Workflow](#example-4-multi-agent-workflow) | For detailed working example, see <a href="examples/agent-span.ts" target="_blank">`examples/agent-span.ts`</a>
 
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
@@ -327,10 +456,12 @@ The SDK supports OpenTelemetry GenAI Semantic Conventions along with industry-st
 | `setAttribute('agent.status', val)` | `agent.status` | String | running, completed, failed, waiting |
 | `setAttribute('agent.iterations', val)` | `agent.iterations` | Number | Number of reasoning iterations |
 | `setAttribute('agent.decision', val)` | `agent.decision` | String | Decision made by agent |
-| `setFramework(name, version)` | `framework.name` | String | langchain, autogen, crewai |
+| `setFramework(name, version)` | `framework.name` | String | langchain, langgraph, autogen |
 | `setFramework(name, version)` | `framework.version` | String | Framework version |
 
 ### Orchestration Span Attributes
+
+**See:** [Example 4: Multi-Agent Workflow](#example-4-multi-agent-workflow) | For detailed working example, see <a href="examples/workflow-span.ts" target="_blank">`examples/workflow-span.ts`</a>
 
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
@@ -338,19 +469,10 @@ The SDK supports OpenTelemetry GenAI Semantic Conventions along with industry-st
 | `setAttribute('chain.total_steps', val)` | `chain.total_steps` | Number | Total steps in workflow |
 | `setAttribute('chain.current_step', val)` | `chain.current_step` | Number | Current step being executed |
 | `setAttribute('is_multi_agent', val)` | `is_multi_agent` | Boolean | Whether workflow uses multiple agents |
-| `setAttribute('crew.name', val)` | `crew.name` | String | Multi-agent crew identifier |
+| `setAttribute('workflow.name', val)` | `workflow.name` | String | Multi-agent workflow identifier |
 | `setAttribute('workflow.status', val)` | `workflow.status` | String | pending, running, completed, failed |
 | `setFramework(name, version)` | `framework.name` | String | Framework orchestrating workflow |
 | `setFramework(name, version)` | `framework.version` | String | Framework version |
-
-### Session Attributes
-
-| SDK Method | OTEL Attribute | Type | Description |
-|------------|----------------|------|-------------|
-| `session({ sessionId, userId, metadata })` | `session.id` | String | Session identifier (auto-generated) |
-| `session({ sessionId, userId, metadata })` | `user.id` | String | User identifier |
-| `session({ sessionId, userId, metadata })` | `session.metadata` | Object | Session-level metadata |
-| `trace(name, { metadata })` | `trace.metadata` | Object | Trace-level metadata |
 
 ### Custom & Extended Attributes
 
@@ -367,8 +489,8 @@ You can add any custom attributes using the `setAttribute()` method. We recommen
 ### OTEL Compliance Reference
 
 All standard OTEL attributes are automatically supported. For the complete specification, see:
-- [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
-- [OpenInference Specification](https://github.com/Arize-ai/openinference)
+- <a href="https://opentelemetry.io/docs/specs/semconv/gen-ai/" target="_blank">OpenTelemetry GenAI Semantic Conventions</a>
+- <a href="https://github.com/Arize-ai/openinference" target="_blank">OpenInference Specification</a>
 
 ---
 
@@ -471,13 +593,13 @@ async function executeTool(toolName: string, parameters: any) {
 
 ```typescript
 async function multiAgentWorkflow(task: string) {
-  const trace = amp.trace('crew-workflow');
+  const trace = amp.trace('multi-agent-workflow');
 
   // Orchestrator
-  const orchSpan = trace.startSpan('Content Crew', { type: 'orchestration' });
+  const orchSpan = trace.startSpan('Content Workflow', { type: 'orchestration' });
   orchSpan
-    .setChain('CrewAI')
-    .setFramework('crewai', '0.30.0')
+    .setChain('multi_agent')
+    .setFramework('langgraph', '0.0.40')
     .setAttribute('chain.total_steps', 3)
     .setAttribute('is_multi_agent', true);
 
@@ -504,8 +626,8 @@ async function multiAgentWorkflow(task: string) {
 ```typescript
 // Create a session for a conversation
 const session = amp.session({
-  sessionId: `user-${userId}-${Date.now()}`,
-  userId: userId,
+  sessionId: 'your-conversation-id',  // Your conversation/session ID
+  userId: 'user-123',                  // Optional: user identifier
   metadata: { channel: 'web', language: 'en' },
 });
 
@@ -540,7 +662,7 @@ Creates a new AMP SDK client.
 ```typescript
 const amp = new AMP({
   apiKey: 'sk-amp-xxxxxx',
-  baseURL: 'https://dev-amp.kore.ai',
+  baseURL: 'https://amp.kore.ai',
 });
 ```
 
@@ -620,77 +742,70 @@ End the trace.
 
 ### Span Methods
 
-#### `span.setTokens(inputTokens: number, outputTokens: number): this`
+#### LLM Span Methods
 
-Set token counts for LLM spans.
+| Method | Description |
+|--------|-------------|
+| `setTokens(input, output)` | Set input/output token counts |
+| `setMessages(inputMsgs[], outputMsgs[])` | Set input & output messages |
+| `setOperation(op)` | Set operation: `chat`, `text_completion`, `embeddings` |
+| `setLLMParams({temperature, topP, maxTokens, ...})` | Set model parameters |
+| `setLLMResponse(finishReason, responseId?)` | Set response metadata |
+| `setCost(costUsd)` | Set cost in USD |
 
-#### `span.setOperation(operation: string): this`
+---
 
-Set operation type (`chat`, `text_completion`, `embeddings`).
+#### Tool Span Methods
 
-#### `span.setLLMInputMessages(messages: Message[]): this`
+| Method | Description |
+|--------|-------------|
+| `setTool(name, params?, result?)` | Set tool name, parameters, and result |
+| `setToolInfo(type, description?, callId?)` | Set tool type and description |
+| `setToolStatus(status, latencyMs?, errorMsg?)` | Set status: `SUCCESS`, `ERROR`, `TIMEOUT` |
 
-Set LLM input messages.
+---
 
-#### `span.setLLMOutputMessages(messages: Message[]): this`
+#### RAG Span Methods
 
-Set LLM output messages.
+| Method | Description |
+|--------|-------------|
+| `setRAG(vectorDb, method, docsRetrieved)` | Set RAG retrieval info |
+| `setUserQuery(query)` | Set user's search query |
+| `setRetrievedContext(docs[])` | Set retrieved documents with scores |
+| `setRAGParams({topK, similarityThreshold, ...})` | Set retrieval parameters |
 
-#### `span.setLLMResponse(finishReason: string, responseId: string): this`
+---
 
-Set LLM response metadata.
+#### Agent Span Methods
 
-#### `span.setToolType(type: string): this`
+| Method | Description |
+|--------|-------------|
+| `setAgent(name, type, goal?)` | Set agent info |
+| `setAgentDetails({id, description, role, status, steps, maxIterations})` | Set agent metadata |
+| `setFramework(name, version?)` | Set framework: `langchain`, `langgraph`, etc. |
 
-Set tool type (`function`, `extension`, `datastore`).
+---
 
-#### `span.setToolParameters(params: any): this`
+#### Orchestration Span Methods
 
-Set tool input parameters.
+| Method | Description |
+|--------|-------------|
+| `setChain(chainType)` | Set chain type: `sequential`, `parallel`, `multi_agent` |
+| `setFramework(name, version?)` | Set framework |
 
-#### `span.setToolResult(result: any): this`
+---
 
-Set tool output result.
+#### Common Methods (All Spans)
 
-#### `span.setToolStatus(status: string, latencyMs?: number): this`
-
-Set tool execution status and latency.
-
-#### `span.setUserQuery(query: string): this`
-
-Set user query for RAG spans.
-
-#### `span.setRetrievalMethod(method: string): this`
-
-Set retrieval method (`vector_search`, `keyword_search`, `hybrid`).
-
-#### `span.setRetrievedContext(context: any): this`
-
-Set retrieved documents/context.
-
-#### `span.setAgent(agentName: string, agentType: string): this`
-
-Set agent information.
-
-#### `span.setChain(chainType: string): this`
-
-Set chain/workflow type.
-
-#### `span.setFramework(name: string, version?: string): this`
-
-Set framework information (e.g., `langchain`, `crewai`).
-
-#### `span.setAttribute(key: string, value: any): this`
-
-Set custom attribute.
-
-#### `span.addEvent(name: string, attributes?: Record<string, any>): this`
-
-Add event to span timeline.
-
-#### `span.end(): void`
-
-End the span.
+| Method | Description |
+|--------|-------------|
+| `setAttribute(key, value)` | Set custom attribute |
+| `setAttributes({...})` | Set multiple attributes |
+| `addEvent(name, attributes?)` | Add event to span timeline |
+| `setOk()` | Set status to OK |
+| `setError(message?)` | Set status to ERROR |
+| `recordException(error)` | Record exception with stack trace |
+| `end()` | End the span |
 
 ---
 
@@ -736,16 +851,6 @@ try {
 }
 ```
 
-### Framework Adapters
-
-Coming soon: Pre-built integrations for popular frameworks.
-
-- LangChain
-- CrewAI
-- AutoGen
-- LlamaIndex
-- Semantic Kernel
-
 ---
 
 ## Troubleshooting
@@ -759,7 +864,7 @@ Coming soon: Pre-built integrations for popular frameworks.
 ```typescript
 const amp = new AMP({
   apiKey: process.env.AMP_API_KEY!,
-  baseURL: 'https://dev-amp.kore.ai',
+  baseURL: 'https://amp.kore.ai',
   debug: true,                          // Enable debug logs
 });
 ```
@@ -771,7 +876,7 @@ const amp = new AMP({
 **Solution**: Verify your API key format and permissions.
 
 - Format: `sk-amp-{accountId}-{randomString}`
-- Check [amp.kore.ai/settings](https://amp.kore.ai/settings) for valid keys
+- Check <a href="https://amp.kore.ai/settings" target="_blank">amp.kore.ai/settings</a> for valid keys
 
 ### Traces Not Appearing in Dashboard
 
@@ -808,10 +913,10 @@ const amp = new AMP({
 
 ## Support
 
-- **Dashboard**: [https://dev-amp.kore.ai](https://dev-amp.kore.ai) (production URL will be updated later)
-- **Documentation**: [https://docs.amp.kore.ai](https://docs.amp.kore.ai)
-- **Support Email**: [support@kore.ai](mailto:support@kore.ai)
-- **GitHub Issues**: [https://github.com/Koredotcom/amp-sdk/issues](https://github.com/Koredotcom/amp-sdk/issues)
+- **Dashboard**: <a href="https://amp.kore.ai" target="_blank">https://amp.kore.ai</a>
+- **Documentation**: <a href="https://docs.amp.kore.ai" target="_blank">https://docs.amp.kore.ai</a>
+- **Support Email**: <a href="mailto:support@kore.ai">support@kore.ai</a>
+- **GitHub Issues**: <a href="https://github.com/Koredotcom/amp-sdk/issues" target="_blank">https://github.com/Koredotcom/amp-sdk/issues</a>
 
 ---
 
