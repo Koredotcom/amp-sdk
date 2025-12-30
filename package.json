@@ -1,5 +1,5 @@
 {
-  "name": "@amp/sdk-workspace",
+  "name": "@koreaiinc/amp-sdk-workspace",
   "version": "0.1.0",
   "private": true,
   "description": "AMP SDK workspace for TypeScript and Python SDKs - Agent Management Platform",

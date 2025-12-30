@@ -1,6 +1,6 @@
 {
-  "name": "@amp/sdk",
-  "version": "1.0.0",
+  "name": "@koreaiinc/amp-sdk",
+  "version": "1.0.1",
   "description": "AMP SDK - Agent Management Platform SDK for telemetry ingestion",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -40,7 +40,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kore-ai/amp-sdk"
+    "url": "https://github.com/Koredotcom/amp-sdk"
+  },
+  "homepage": "https://github.com/Koredotcom/amp-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/Koredotcom/amp-sdk/issues"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -59,4 +63,3 @@
   "peerDependencies": {},
   "dependencies": {}
 }
-
