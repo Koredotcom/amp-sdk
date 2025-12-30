@@ -1,6 +1,6 @@
 {
   "name": "@koreaiinc/amp-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "AMP SDK - Agent Management Platform SDK for telemetry ingestion",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
