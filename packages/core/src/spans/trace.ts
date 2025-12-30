@@ -71,7 +71,8 @@ export class Trace {
   // ============================================
 
   /**
-   * Start a new span within this trace
+   * Start a new span within this trace (root-level span)
+   * For nested child spans, use span.startChildSpan()
    */
   startSpan(name: string, options: SpanOptions = {}): Span {
     if (this._ended) {
@@ -79,6 +80,12 @@ export class Trace {
     }
 
     const span = new Span(name, this._traceId, options);
+
+    // Set callback so child spans created via span.startChildSpan() get registered
+    span.setSpanCreatedCallback((childSpan: Span) => {
+      this._spans.push(childSpan);
+    });
+
     this._spans.push(span);
     return span;
   }
@@ -94,19 +101,22 @@ export class Trace {
 
   /**
    * Start a tool span (convenience method)
+   * Sets all mandatory tool fields automatically
    */
-  startToolSpan(name: string, toolName: string): Span {
+  startToolSpan(name: string, toolName: string, toolType: string = 'function'): Span {
     const span = this.startSpan(name, { type: 'tool' });
     span.setAttribute('tool.name', toolName);
+    span.setAttribute('tool.type', toolType);
     return span;
   }
 
   /**
    * Start a RAG span (convenience method)
+   * Sets all mandatory RAG fields automatically
    */
-  startRAGSpan(name: string, dbSystem: string): Span {
+  startRAGSpan(name: string, dbSystem: string, method: string = 'vector_search'): Span {
     const span = this.startSpan(name, { type: 'rag' });
-    span.setAttribute('rag.db_system', dbSystem);
+    span.setRAG(dbSystem, method, 0); // documentsRetrieved updated by setRetrievedContext
     return span;
   }
 
@@ -215,6 +225,7 @@ export class Trace {
   toData(): TraceData {
     return {
       trace_id: this._traceId,
+      trace_name: this._name, // Include trace name for proper identification
       session_id: this._sessionId,
       start_time: this._startTime,
       end_time: this._endTime,

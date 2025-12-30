@@ -133,13 +133,13 @@ describe('Trace', () => {
   it('should auto-end open spans when trace ends', () => {
     const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
     const trace = amp.trace('test');
-    
+
     const span1 = trace.startSpan('span-1');
     const span2 = trace.startSpan('span-2');
-    
+
     // Don't manually end spans
     trace.end();
-    
+
     expect(span1.isEnded).toBe(true);
     expect(span2.isEnded).toBe(true);
   });
@@ -148,8 +148,17 @@ describe('Trace', () => {
     const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
     const trace = amp.trace('test');
     trace.end();
-    
+
     expect(() => trace.startSpan('new-span')).toThrow();
+  });
+
+  it('should include trace_name in serialized data', () => {
+    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const trace = amp.trace('my-trace-name');
+    trace.end();
+
+    const data = trace.toData();
+    expect(data.trace_name).toBe('my-trace-name');
   });
 });
 
@@ -176,20 +185,78 @@ describe('Span', () => {
   it('should support method chaining', () => {
     const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
     const trace = amp.trace('test');
-    
+
     const span = trace.startSpan('llm')
       .setLLM('openai', 'gpt-4')
       .setTokens(100, 50)
       .setLLMParams({ temperature: 0.7 })
       .recordPrompt('Hello')
       .setOk();
-    
+
     span.end();
-    
+
     const data = span.toData();
     expect(data.attributes['gen_ai.system']).toBe('openai');
     expect(data.attributes['gen_ai.usage.input_tokens']).toBe(100);
     expect(data.attributes['gen_ai.request.temperature']).toBe(0.7);
+  });
+
+  it('should create child spans with parentSpanId', () => {
+    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const parentSpan = trace.startSpan('parent-span', { type: 'agent' });
+    const childSpan = parentSpan.startChildSpan('child-span', { type: 'llm' });
+
+    expect(childSpan.parentSpanId).toBe(parentSpan.spanId);
+    expect(childSpan.traceId).toBe(trace.traceId);
+
+    childSpan.end();
+    parentSpan.end();
+    trace.end();
+
+    const traceData = trace.toData();
+    expect(traceData.spans).toHaveLength(2);
+
+    const childData = traceData.spans.find(s => s.span_id === childSpan.spanId);
+    expect(childData?.parent_span_id).toBe(parentSpan.spanId);
+  });
+
+  it('should create typed child spans with convenience methods', () => {
+    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const agentSpan = trace.startAgentSpan('agent', 'my-agent', 'orchestrator');
+
+    const llmChild = agentSpan.startChildLLMSpan('llm-call', 'openai', 'gpt-4');
+    const toolChild = agentSpan.startChildToolSpan('tool-call', 'search');
+    const ragChild = agentSpan.startChildRAGSpan('rag-call', 'pinecone');
+
+    expect(llmChild.parentSpanId).toBe(agentSpan.spanId);
+    expect(toolChild.parentSpanId).toBe(agentSpan.spanId);
+    expect(ragChild.parentSpanId).toBe(agentSpan.spanId);
+
+    const llmData = llmChild.toData();
+    expect(llmData.type).toBe('llm');
+    expect(llmData.attributes['gen_ai.system']).toBe('openai');
+
+    const toolData = toolChild.toData();
+    expect(toolData.type).toBe('tool');
+    expect(toolData.attributes['tool.name']).toBe('search');
+
+    const ragData = ragChild.toData();
+    expect(ragData.type).toBe('rag');
+    expect(ragData.attributes['rag.db_system']).toBe('pinecone');
+  });
+
+  it('should not allow child spans on ended parent', () => {
+    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const parentSpan = trace.startSpan('parent');
+    parentSpan.end();
+
+    expect(() => parentSpan.startChildSpan('child')).toThrow();
   });
 });
 
