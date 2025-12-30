@@ -11,12 +11,38 @@
 ## Table of Contents
 
 - [Introduction](#introduction)
+  - [What is AMP?](#what-is-amp)
+  - [Key Capabilities](#key-capabilities)
+  - [Supported Span Types](#supported-span-types)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+  - [Required Parameters](#required-parameters)
+  - [Optional Parameters](#optional-parameters)
 - [Core Concepts](#core-concepts)
+  - [Session](#session)
+  - [Trace](#trace)
+  - [Span](#span)
+  - [OpenTelemetry Compliance](#opentelemetry-compliance)
+- [Supported Attributes & OTEL Mapping](#supported-attributes--otel-mapping)
+  - [LLM Span Attributes](#llm-span-attributes)
+  - [Tool Span Attributes](#tool-span-attributes)
+  - [RAG Span Attributes](#rag-span-attributes)
+  - [Agent Span Attributes](#agent-span-attributes)
+  - [Orchestration Span Attributes](#orchestration-span-attributes)
 - [Examples](#examples)
+  - [Example 1: Simple LLM Chat](#example-1-simple-llm-chat)
+  - [Example 2: RAG Pipeline](#example-2-rag-pipeline)
+  - [Example 3: Tool Execution](#example-3-tool-execution)
+  - [Example 4: Multi-Agent Workflow](#example-4-multi-agent-workflow)
+  - [Example 5: Session Management](#example-5-session-management-multi-turn)
+  - [Complete Working Example (All Span Types)](#complete-working-example-all-span-types)
 - [API Reference](#api-reference)
+  - [AMP Client](#amp-client)
+  - [Session Methods (Grouping Traces)](#session-methods-grouping-traces)
+  - [Trace Methods (Creating Spans)](#trace-methods-creating-spans)
+  - [Span Methods - Quick Reference](#span-methods---quick-reference)
+- [Development (Building from Source)](#development-building-from-source)
 - [Advanced Topics](#advanced-topics)
 - [Troubleshooting](#troubleshooting)
 - [Support](#support)
@@ -498,6 +524,8 @@ All standard OTEL attributes are automatically supported. For the complete speci
 
 ### Example 1: Simple LLM Chat
 
+> **Detailed Example:** <a href="examples/llm-span.ts" target="_blank">examples/llm-span.ts</a>
+
 ```typescript
 import { AMP } from '@amp/sdk';
 
@@ -513,8 +541,10 @@ async function handleUserQuery(userMessage: string) {
   span
     .setTokens(response.usage.prompt_tokens, response.usage.completion_tokens)
     .setOperation('chat')
-    .setLLMInputMessages([{ role: 'user', content: userMessage }])
-    .setLLMOutputMessages([{ role: 'assistant', content: response.content }])
+    .setMessages(
+      [{ role: 'user', content: userMessage }],           // inputMsgs: messages sent TO the model
+      [{ role: 'assistant', content: response.content }]  // outputMsgs: messages FROM the model
+    )
     .setLLMResponse('stop', response.id);
 
   span.end();
@@ -526,6 +556,8 @@ async function handleUserQuery(userMessage: string) {
 ```
 
 ### Example 2: RAG Pipeline
+
+> **Detailed Example:** <a href="examples/rag-span.ts" target="_blank">examples/rag-span.ts</a>
 
 ```typescript
 async function ragPipeline(userQuery: string) {
@@ -548,11 +580,15 @@ async function ragPipeline(userQuery: string) {
 
   llmSpan
     .setTokens(answer.inputTokens, answer.outputTokens)
-    .setLLMInputMessages([
-      { role: 'system', content: 'Answer using the provided context.' },
-      { role: 'user', content: userQuery },
-    ])
-    .setLLMOutputMessages([{ role: 'assistant', content: answer.text }]);
+    .setMessages(
+      // inputMsgs: messages sent TO the model
+      [
+        { role: 'system', content: 'Answer using the provided context.' },
+        { role: 'user', content: userQuery },
+      ],
+      // outputMsgs: messages FROM the model
+      [{ role: 'assistant', content: answer.text }]
+    );
   llmSpan.end();
 
   trace.end();
@@ -561,6 +597,8 @@ async function ragPipeline(userQuery: string) {
 ```
 
 ### Example 3: Tool Execution
+
+> **Detailed Example:** <a href="examples/tool-span.ts" target="_blank">examples/tool-span.ts</a>
 
 ```typescript
 async function executeTool(toolName: string, parameters: any) {
@@ -573,9 +611,8 @@ async function executeTool(toolName: string, parameters: any) {
     const latency = Date.now() - startTime;
 
     span
-      .setToolType('function')
-      .setToolParameters(parameters)
-      .setToolResult(result)
+      .setTool(toolName, parameters, result)  // name, params (input), result (output)
+      .setToolInfo('function', 'Tool description')
       .setToolStatus('success', latency);
   } catch (error) {
     span
@@ -590,6 +627,8 @@ async function executeTool(toolName: string, parameters: any) {
 ```
 
 ### Example 4: Multi-Agent Workflow
+
+> **Detailed Examples:** <a href="examples/workflow-span.ts" target="_blank">examples/workflow-span.ts</a> | <a href="examples/agent-span.ts" target="_blank">examples/agent-span.ts</a>
 
 ```typescript
 async function multiAgentWorkflow(task: string) {
@@ -623,6 +662,8 @@ async function multiAgentWorkflow(task: string) {
 
 ### Example 5: Session Management (Multi-Turn)
 
+> **Detailed Example:** <a href="examples/session-example.ts" target="_blank">examples/session-example.ts</a>
+
 ```typescript
 // Create a session for a conversation
 const session = amp.session({
@@ -647,6 +688,28 @@ trace2.end();
 
 // All traces are automatically grouped by sessionId
 await amp.flush();
+```
+
+### Complete Working Example (All Span Types)
+
+> **Full Demo:** <a href="examples/sdk-demo-test.ts" target="_blank">examples/sdk-demo-test.ts</a>
+
+The `sdk-demo-test.ts` file demonstrates all span types in a single runnable script:
+- LLM Chat Completion
+- Tool/Function Execution
+- RAG Vector Retrieval
+- Agent Execution
+- Multi-Agent Workflow
+- Conversational Session (multi-turn)
+
+**How to run:**
+
+```bash
+# Set your API key and run
+AMP_API_KEY=your-api-key npx tsx examples/sdk-demo-test.ts
+
+# Optional: Override base URL
+AMP_API_KEY=your-api-key AMP_BASE_URL=https://amp.kore.ai npx tsx examples/sdk-demo-test.ts
 ```
 
 ---
@@ -714,98 +777,171 @@ Get current queue size.
 console.log(`Queued traces: ${amp.queueSize}`);
 ```
 
-### Trace Methods
+### Session Methods (Grouping Traces)
 
-#### `trace.startLLMSpan(name: string, provider: string, model: string): Span`
+Use sessions to group related traces together (e.g., multi-turn conversations).
 
-Create an LLM span for language model calls.
+```typescript
+// 1. Create a session
+const session = amp.session({
+  sessionId: 'conversation-123',  // Your ID or auto-generated
+  userId: 'user-456',             // Optional
+  metadata: { channel: 'web' },   // Optional
+});
 
-#### `trace.startToolSpan(name: string, toolName: string): Span`
+// 2. Create traces within the session (automatically grouped)
+const trace1 = session.trace('turn-1');
+// ... add spans, end trace
+trace1.end();
 
-Create a tool span for function/tool execution.
+const trace2 = session.trace('turn-2');
+// ... add spans, end trace
+trace2.end();
+```
 
-#### `trace.startRAGSpan(name: string, dbSystem: string, method: string): Span`
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `session.trace(name, options?)` | `Trace` | Create a trace within this session (auto-assigns sessionId) |
 
-Create a RAG span for retrieval operations.
+---
 
-#### `trace.startAgentSpan(name: string, agentName: string, agentType: string, goal?: string): Span`
+### Trace Methods (Creating Spans)
 
-Create an agent span for agent lifecycle events.
+Use trace methods to create spans. Each method returns a `Span` object you can configure.
 
-#### `trace.startSpan(name: string, options?: SpanOptions): Span`
+```typescript
+const trace = amp.trace('my-operation');
+const span = trace.startLLMSpan('chat', 'openai', 'gpt-4');  // Returns Span
+span.setTokens(100, 50);  // Configure the span
+span.end();
+trace.end();
+```
 
-Create a custom span.
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `trace.startLLMSpan(name, provider, model)` | `Span` | Create LLM span for model calls |
+| `trace.startToolSpan(name, toolName)` | `Span` | Create tool span for function execution |
+| `trace.startRAGSpan(name, dbSystem)` | `Span` | Create RAG span for retrieval operations |
+| `trace.startAgentSpan(name, agentName, agentType, goal?)` | `Span` | Create agent span for agent lifecycle |
+| `trace.startSpan(name, options?)` | `Span` | Create custom/orchestration span |
+| `trace.end()` | `void` | End the trace (call after all spans end) |
 
-#### `trace.end(): void`
-
-End the trace.
-
-### Span Methods
+### Span Methods - Quick Reference
 
 #### LLM Span Methods
 
-| Method | Description |
-|--------|-------------|
-| `setTokens(input, output)` | Set input/output token counts |
-| `setMessages(inputMsgs[], outputMsgs[])` | Set input & output messages |
-| `setOperation(op)` | Set operation: `chat`, `text_completion`, `embeddings` |
-| `setLLMParams({temperature, topP, maxTokens, ...})` | Set model parameters |
-| `setLLMResponse(finishReason, responseId?)` | Set response metadata |
-| `setCost(costUsd)` | Set cost in USD |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `setLLM(provider, model, responseModel?)` | `provider`: openai, anthropic, google, azure, etc. `model`: gpt-4, claude-3, etc. `responseModel`: actual model used (optional) | Set/change LLM provider and model |
+| `setTokens(input, output)` | `input`: prompt token count, `output`: completion token count | Set token usage (auto-calculates total) |
+| `setMessages(inputMsgs[], outputMsgs[])` | `inputMsgs`: messages sent TO model `[{role, content}]`, `outputMsgs`: messages FROM model | Set conversation messages (OTEL + OpenInference) |
+| `setSystemPrompt(prompt)` | `prompt`: system instructions string | Set system prompt separately |
+| `setOperation(op)` | `op`: `'chat'`, `'text_completion'`, `'embeddings'` | Set operation type |
+| `setLLMParams({...})` | `temperature`: 0-2, `topP`: 0-1, `maxTokens`: limit, `frequencyPenalty`, `presencePenalty`, `stopSequences[]` | Set model parameters |
+| `setLLMResponse(reason, id?)` | `reason`: `'stop'`, `'length'`, `'content_filter'`, `'tool_calls'`, `id`: response ID | Set completion metadata |
+| `setCost(costUsd)` | `costUsd`: cost in USD (e.g., 0.0082) | Set cost for this call |
+| `setConversationId(id)` | `id`: conversation/thread identifier | Link span to conversation thread |
+| `recordPrompt(content)` | `content`: prompt text | Record prompt as OTEL event |
+| `recordCompletion(content)` | `content`: completion text | Record completion as OTEL event |
 
 ---
 
 #### Tool Span Methods
 
-| Method | Description |
-|--------|-------------|
-| `setTool(name, params?, result?)` | Set tool name, parameters, and result |
-| `setToolInfo(type, description?, callId?)` | Set tool type and description |
-| `setToolStatus(status, latencyMs?, errorMsg?)` | Set status: `SUCCESS`, `ERROR`, `TIMEOUT` |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `setTool(name, params?, result?)` | `name`: tool/function name, `params`: input parameters (object), `result`: execution result (object) | Set tool name, input parameters, and output result |
+| `setToolInfo(type, description?, callId?)` | `type`: `'function'`, `'api'`, `'datastore'`, `'extension'`, `description`: purpose, `callId`: unique call ID | Set tool type and description |
+| `setToolStatus(status, latencyMs?, errorMsg?)` | `status`: `'SUCCESS'`, `'ERROR'`, `'TIMEOUT'` (or lowercase), `latencyMs`: execution time, `errorMsg`: error details | Set execution status and timing |
 
 ---
 
 #### RAG Span Methods
 
-| Method | Description |
-|--------|-------------|
-| `setRAG(vectorDb, method, docsRetrieved)` | Set RAG retrieval info |
-| `setUserQuery(query)` | Set user's search query |
-| `setRetrievedContext(docs[])` | Set retrieved documents with scores |
-| `setRAGParams({topK, similarityThreshold, ...})` | Set retrieval parameters |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `setRAG(vectorDb, method, docsRetrieved)` | `vectorDb`: pinecone, weaviate, chroma, qdrant, etc., `method`: `'vector_search'`, `'hybrid_search'`, `'keyword_search'`, `'reranking'`, `docsRetrieved`: count | Set core RAG retrieval info |
+| `setUserQuery(query)` | `query`: user's search query string | Set the retrieval query (input) |
+| `setRetrievedContext(docs[])` | `docs`: array of `{doc_id, content, score}` | Set retrieved documents (output). Auto-calculates `context_length` and `top_score` |
+| `setRAGParams({...})` | `topK`: max docs, `similarityThreshold`: 0-1, `embeddingModel`: model name, `indexName`: index/collection, `dataSourceId`: KB identifier | Set retrieval parameters |
 
 ---
 
 #### Agent Span Methods
 
-| Method | Description |
-|--------|-------------|
-| `setAgent(name, type, goal?)` | Set agent info |
-| `setAgentDetails({id, description, role, status, steps, maxIterations})` | Set agent metadata |
-| `setFramework(name, version?)` | Set framework: `langchain`, `langgraph`, etc. |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `setAgent(name, type, goal?)` | `name`: agent identifier, `type`: `'research'`, `'writer'`, `'coder'`, `'planner'`, etc., `goal`: task objective | Set core agent info |
+| `setAgentDetails({...})` | `id`: unique ID, `description`: agent purpose, `role`: role in workflow, `status`: `'running'`, `'completed'`, `'failed'`, `steps`: iteration count, `maxIterations`: limit | Set agent metadata |
+| `setFramework(name, version?)` | `name`: `'langchain'`, `'langgraph'`, `'autogen'`, etc., `version`: semver | Set framework info |
+| `setCost(costUsd)` | `costUsd`: total cost in USD | Set agent execution cost |
+| `setTokens(input, output)` | `input`: total input tokens, `output`: total output tokens | Set aggregate token usage |
 
 ---
 
-#### Orchestration Span Methods
+#### Orchestration/Workflow Span Methods
 
-| Method | Description |
-|--------|-------------|
-| `setChain(chainType)` | Set chain type: `sequential`, `parallel`, `multi_agent` |
-| `setFramework(name, version?)` | Set framework |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `setChain(chainType)` | `chainType`: `'multi_agent_workflow'`, `'sequential'`, `'parallel'`, `'conditional'`, `'router'` | Set workflow/chain type |
+| `setFramework(name, version?)` | `name`: `'langgraph'`, `'langchain'`, etc., `version`: semver | Set orchestration framework |
+| `setTokens(input, output)` | `input`: aggregate input tokens, `output`: aggregate output tokens | Set total token usage across workflow |
+| `setCost(costUsd)` | `costUsd`: total workflow cost in USD | Set aggregate cost |
 
 ---
 
 #### Common Methods (All Spans)
 
-| Method | Description |
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `setAttribute(key, value)` | `key`: attribute name, `value`: string, number, boolean, or string[] | Set custom attribute |
+| `setAttributes({...})` | Object with multiple key-value pairs | Set multiple attributes at once |
+| `setMetadata(key, value)` | `key`: metadata name, `value`: string, number, or boolean | Set metadata (separate from attributes) |
+| `setLatency(latencyMs)` | `latencyMs`: execution time in milliseconds | Set latency metric |
+| `setService(name, version?, env?)` | `name`: service name, `version`: semver, `env`: deployment environment | Set service info |
+| `addEvent(name, attrs?)` | `name`: event name, `attrs`: event attributes object | Add event to span timeline |
+| `setOk()` | - | Set status to OK |
+| `setError(message?)` | `message`: error description | Set status to ERROR |
+| `recordException(error)` | `error`: Error object | Record exception with type, message, and stack trace |
+| `end()` | - | End the span (captures end_time) |
+
+---
+
+## Development (Building from Source)
+
+If you're working directly with the SDK source code instead of installing from npm:
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/Koredotcom/amp-sdk.git
+cd amp-sdk
+
+# Install dependencies
+cd packages/core
+npm install
+
+# Build the SDK
+npm run build
+```
+
+### Available Scripts
+
+| Script | Description |
 |--------|-------------|
-| `setAttribute(key, value)` | Set custom attribute |
-| `setAttributes({...})` | Set multiple attributes |
-| `addEvent(name, attributes?)` | Add event to span timeline |
-| `setOk()` | Set status to OK |
-| `setError(message?)` | Set status to ERROR |
-| `recordException(error)` | Record exception with stack trace |
-| `end()` | End the span |
+| `npm run build` | Build the SDK (outputs to `dist/`) |
+| `npm run dev` | Build in watch mode |
+| `npm run test` | Run tests |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | TypeScript type checking |
+
+### Running Examples
+
+```bash
+# From sdk root directory
+AMP_API_KEY=your-api-key npx tsx examples/sdk-demo-test.ts
+```
 
 ---
 
