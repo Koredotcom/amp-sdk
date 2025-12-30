@@ -695,6 +695,7 @@ export interface SpanData {
  */
 export interface TraceData {
   trace_id: string;
+  trace_name: string; // Human-readable name for the trace
   session_id: string;
   start_time: string;
   end_time?: string;
