@@ -11,7 +11,10 @@
     "test:ts": "cd packages/typescript && npm test",
     "test:py": "cd packages/python && pytest",
     "lint": "cd packages/typescript && npm run lint",
-    "build": "cd packages/typescript && npm run build",
+    "build": "npm run sync-readme && cd packages/core && npm run build",
+    "build:core": "cd packages/core && npm run build",
+    "sync-readme": "cp README.md packages/core/README.md",
+    "prepublish": "npm run sync-readme",
     "publish:ts": "cd packages/typescript && npm publish",
     "publish:py": "cd packages/python && twine upload dist/*"
   },

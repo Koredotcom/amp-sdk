@@ -42,6 +42,7 @@
   - [Session Methods (Grouping Traces)](#session-methods-grouping-traces)
   - [Trace Methods (Creating Spans)](#trace-methods-creating-spans)
   - [Span Methods - Quick Reference](#span-methods---quick-reference)
+    - [Child Span Methods](#child-span-methods-for-nested-operations)
 - [Development (Building from Source)](#development-building-from-source)
 - [Advanced Topics](#advanced-topics)
 - [Troubleshooting](#troubleshooting)
@@ -325,24 +326,73 @@ const trace = amp.trace('user-query', {
 
 A **Span** is the smallest unit of work within a trace. Spans represent individual operations like LLM calls, tool executions, or vector searches.
 
-Spans can be linked together using `parentSpanId` to create a hierarchy within a trace. The first span in a trace has `parentSpanId: null`.
+#### Span Hierarchy (Parent-Child Relationships)
 
+Spans can be organized in a hierarchy using parent-child relationships:
+
+- **Sibling spans**: Independent operations at the same level (e.g., parallel RAG + LLM)
+- **Child spans**: Operations that are part of a parent's work (e.g., tools inside an agent)
+
+```
+Trace: user-request
+├── RAG Span (parent: null)      ← Sibling
+├── LLM Span (parent: null)      ← Sibling
+└── Agent Span (parent: null)    ← Root for nested operations
+    ├── Tool Span (parent: Agent) ← Child
+    └── LLM Span (parent: Agent)  ← Child
+```
+
+**Creating Sibling Spans (parallel/sequential operations):**
 ```typescript
-// First span (no parent)
+// Sibling spans - all at root level (parent_span_id = null)
 const ragSpan = trace.startRAGSpan('vector-search', 'pinecone');
 ragSpan.end();
 
-// Second span (no parent - sibling to first)
 const llmSpan = trace.startLLMSpan('chat-completion', 'openai', 'gpt-4');
 llmSpan.setTokens(150, 75);
 llmSpan.end();
-
-// Child span (with parent)
-const childSpan = trace.startSpan('post-process', {
-  parentSpanId: llmSpan.spanId
-});
-childSpan.end();
 ```
+
+**Creating Child Spans (nested operations):**
+```typescript
+// Agent with nested tool and LLM calls
+const agentSpan = trace.startSpan('Agent Execution', { type: 'agent' });
+agentSpan.setAgent('ResearchBot', 'research', 'Analyze market trends');
+
+// Tool call - child of agent (pass parentSpanId in options)
+const toolSpan = trace.startSpan('Tool: Web Search', {
+  type: 'tool',
+  parentSpanId: agentSpan.spanId  // Link to parent
+});
+toolSpan.setTool('web_search', { query: 'AI news' }, { results: [...] });
+toolSpan.end();
+
+// LLM call - child of agent
+const llmSpan = trace.startSpan('LLM Decision', {
+  type: 'llm',
+  parentSpanId: agentSpan.spanId  // Link to parent
+});
+llmSpan.setLLM('openai', 'gpt-4');
+llmSpan.setTokens(100, 50);
+llmSpan.end();
+
+agentSpan.end();
+```
+
+**Alternative: Using startChildSpan() method:**
+```typescript
+// Creates child span automatically linked to parent
+const toolSpan = agentSpan.startChildSpan('Tool: Search', { type: 'tool' });
+const llmSpan = agentSpan.startChildSpan('LLM Call', { type: 'llm' });
+```
+
+**When to use Child Spans:**
+| Scenario | Use Child Span? | Example |
+|----------|-----------------|---------|
+| Tool call inside Agent | ✅ Yes | `agentSpan.startChildSpan('Tool')` |
+| LLM call inside Agent | ✅ Yes | `agentSpan.startChildSpan('LLM')` |
+| RAG → LLM pipeline | ❌ No (siblings) | `trace.startRAGSpan()`, `trace.startLLMSpan()` |
+| Parallel operations | ❌ No (siblings) | Multiple `trace.startSpan()` calls |
 
 ### OpenTelemetry Compliance
 
@@ -634,23 +684,29 @@ async function executeTool(toolName: string, parameters: any) {
 async function multiAgentWorkflow(task: string) {
   const trace = amp.trace('multi-agent-workflow');
 
-  // Orchestrator
+  // Orchestrator (root span)
   const orchSpan = trace.startSpan('Content Workflow', { type: 'orchestration' });
   orchSpan
     .setChain('multi_agent')
     .setFramework('langgraph', '0.0.40')
-    .setAttribute('chain.total_steps', 3)
+    .setAttribute('chain.total_steps', 2)
     .setAttribute('is_multi_agent', true);
 
-  // Writer Agent
-  const writerSpan = trace.startAgentSpan('Writer', 'WriterBot', 'writer', 'Write blog post');
-  writerSpan.setAttribute('agent.role', 'writer');
+  // Writer Agent (child of orchestrator)
+  const writerSpan = trace.startSpan('Writer Agent', {
+    type: 'agent',
+    parentSpanId: orchSpan.spanId  // Link to orchestrator
+  });
+  writerSpan.setAgent('WriterBot', 'writer', 'Write blog post');
   await writerAgent.execute(task);
   writerSpan.end();
 
-  // Editor Agent
-  const editorSpan = trace.startAgentSpan('Editor', 'EditorBot', 'editor', 'Review and polish');
-  editorSpan.setAttribute('agent.role', 'editor');
+  // Editor Agent (child of orchestrator)
+  const editorSpan = trace.startSpan('Editor Agent', {
+    type: 'agent',
+    parentSpanId: orchSpan.spanId  // Link to orchestrator
+  });
+  editorSpan.setAgent('EditorBot', 'editor', 'Review and polish');
   await editorAgent.execute(task);
   editorSpan.end();
 
@@ -658,6 +714,12 @@ async function multiAgentWorkflow(task: string) {
   trace.end();
   await amp.flush();
 }
+
+// Result hierarchy:
+// Trace: multi-agent-workflow
+// └── Content Workflow (orchestration)
+//     ├── Writer Agent (agent) - child of orchestrator
+//     └── Editor Agent (agent) - child of orchestrator
 ```
 
 ### Example 5: Session Management (Multi-Turn)
@@ -827,6 +889,25 @@ trace.end();
 | `trace.end()` | `void` | End the trace (call after all spans end) |
 
 ### Span Methods - Quick Reference
+
+#### Child Span Methods (for nested operations)
+
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `span.startChildSpan(name, options?)` | `name`: span name, `options`: `{ type, parentSpanId, attributes }` | Create child span nested under this span |
+| `span.startChildLLMSpan(name, provider, model)` | `name`: span name, `provider`: LLM provider, `model`: model name | Create child LLM span |
+| `span.startChildToolSpan(name, toolName)` | `name`: span name, `toolName`: tool name | Create child tool span |
+| `span.startChildRAGSpan(name, dbSystem)` | `name`: span name, `dbSystem`: vector DB name | Create child RAG span |
+
+**SpanOptions for parentSpanId:**
+```typescript
+trace.startSpan('child-operation', {
+  type: 'tool',
+  parentSpanId: parentSpan.spanId  // Links this span as child of parentSpan
+});
+```
+
+---
 
 #### LLM Span Methods
 
