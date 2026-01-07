@@ -13,30 +13,70 @@ exports.duration = duration;
 exports.sleep = sleep;
 exports.retry = retry;
 /**
+ * Generate cryptographically secure random bytes as hex string
+ * Uses crypto.getRandomValues when available, falls back to Math.random
+ */
+function getRandomBytes(byteLength) {
+    const bytes = new Uint8Array(byteLength);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(bytes);
+    }
+    else {
+        // Fallback for environments without crypto
+        for (let i = 0; i < byteLength; i++) {
+            bytes[i] = Math.floor(Math.random() * 256);
+        }
+    }
+    return bytes;
+}
+/**
+ * Convert bytes to lowercase hex string
+ */
+function bytesToHex(bytes) {
+    return Array.from(bytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+}
+/**
+ * Check if bytes are all zero (invalid for OTEL)
+ */
+function isZero(bytes) {
+    return bytes.every(b => b === 0);
+}
+/**
  * Generate a random hex string ID
  */
 function generateId(length = 16) {
-    const chars = '0123456789abcdef';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-        result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
+    const bytes = getRandomBytes(Math.ceil(length / 2));
+    return bytesToHex(bytes).slice(0, length);
 }
 /**
- * Generate trace ID (32 hex chars)
+ * Generate OTEL-compliant Trace ID
+ * Format: 32 lowercase hex chars (16 bytes / 128 bits)
+ * Must be non-zero as per W3C Trace Context spec
  */
 function generateTraceId() {
-    return generateId(32);
+    let bytes;
+    do {
+        bytes = getRandomBytes(16); // 16 bytes = 128 bits = 32 hex chars
+    } while (isZero(bytes));
+    return bytesToHex(bytes);
 }
 /**
- * Generate span ID (16 hex chars)
+ * Generate OTEL-compliant Span ID
+ * Format: 16 lowercase hex chars (8 bytes / 64 bits)
+ * Must be non-zero as per W3C Trace Context spec
  */
 function generateSpanId() {
-    return generateId(16);
+    let bytes;
+    do {
+        bytes = getRandomBytes(8); // 8 bytes = 64 bits = 16 hex chars
+    } while (isZero(bytes));
+    return bytesToHex(bytes);
 }
 /**
- * Generate session ID
+ * Generate session ID with timestamp for uniqueness
+ * Format: sess_<timestamp>_<random>
  */
 function generateSessionId() {
     return `sess_${Date.now()}_${generateId(8)}`;

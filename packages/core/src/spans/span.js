@@ -39,14 +39,89 @@ class Span {
             this._metadata = { ...options.metadata };
         }
     }
+    /**
+     * Set callback for registering child spans with the trace
+     * @internal Used by Trace class
+     */
+    setSpanCreatedCallback(callback) {
+        this._onSpanCreated = callback;
+    }
     // ============================================
     // GETTERS
     // ============================================
     get spanId() { return this._spanId; }
     get traceId() { return this._traceId; }
+    get parentSpanId() { return this._parentSpanId; }
     get name() { return this._name; }
     get type() { return this._type; }
     get isEnded() { return this._ended; }
+    // ============================================
+    // CHILD SPAN CREATION
+    // ============================================
+    /**
+     * Start a child span nested under this span
+     * Use this for operations that are truly part of this span's work
+     *
+     * @example
+     * ```typescript
+     * const agentSpan = trace.startSpan('Agent Execution', { type: 'agent' });
+     *
+     * // Tool call is part of agent's work - use child span
+     * const toolSpan = agentSpan.startChildSpan('Tool: Search', { type: 'tool' });
+     * toolSpan.setTool('web_search', { query: 'AI news' }, { results: [...] });
+     * toolSpan.end();
+     *
+     * // LLM call is part of agent's work - use child span
+     * const llmSpan = agentSpan.startChildSpan('LLM Decision', { type: 'llm' });
+     * llmSpan.setLLM('openai', 'gpt-4');
+     * llmSpan.end();
+     *
+     * agentSpan.end();
+     * ```
+     */
+    startChildSpan(name, options = {}) {
+        if (this._ended) {
+            throw new Error(`Cannot create child span on ended span ${this._spanId}`);
+        }
+        const childSpan = new Span(name, this._traceId, {
+            ...options,
+            parentSpanId: this._spanId, // This span becomes the parent
+        });
+        // Pass the callback to child so it can also create nested children
+        if (this._onSpanCreated) {
+            childSpan.setSpanCreatedCallback(this._onSpanCreated);
+            // Register this child span with the trace
+            this._onSpanCreated(childSpan);
+        }
+        return childSpan;
+    }
+    /**
+     * Start a child LLM span (convenience method)
+     */
+    startChildLLMSpan(name, provider, model) {
+        const span = this.startChildSpan(name, { type: 'llm' });
+        span.setLLM(provider, model);
+        return span;
+    }
+    /**
+     * Start a child tool span (convenience method)
+     * Sets all mandatory tool fields automatically
+     */
+    startChildToolSpan(name, toolName, toolType = 'function') {
+        const span = this.startChildSpan(name, { type: 'tool' });
+        span.setAttribute('tool.name', toolName);
+        span.setAttribute('tool.type', toolType);
+        return span;
+    }
+    /**
+     * Start a child RAG span (convenience method)
+     * Sets all mandatory RAG fields automatically
+     */
+    startChildRAGSpan(name, dbSystem, method = 'vector_search') {
+        const span = this.startChildSpan(name, { type: 'rag' });
+        span.setRAG(dbSystem, method, 0); // documentsRetrieved will be set by setRetrievedContext
+        return span;
+    }
     // ============================================
     // LLM METHODS
     // ============================================
@@ -173,6 +248,10 @@ class Span {
     setTool(name, params, result) {
         this._type = 'tool';
         this._attributes['tool.name'] = name;
+        // Set default tool.type if not already set
+        if (!this._attributes['tool.type']) {
+            this._attributes['tool.type'] = 'function';
+        }
         if (params !== undefined) {
             this._attributes['tool.parameters'] = params;
         }

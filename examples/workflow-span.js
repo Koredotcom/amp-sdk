@@ -68,9 +68,9 @@ async function main() {
     workflowSpan.setAttribute('agent.collaboration_mode', 'sequential');
     workflowSpan.setAttribute('agent.team_id', 'team-content');
     // ---------------------------------------------------------------------------
-    // Agent 1: Research Agent
+    // Agent 1: Research Agent (child of workflow)
     // ---------------------------------------------------------------------------
-    const researchAgent = trace.startAgentSpan('Research Phase', 'ResearchAgent', 'researcher');
+    const researchAgent = workflowSpan.startChildSpan('Research Phase', { type: 'agent' });
     researchAgent.setAgent('ResearchAgent', 'researcher', 'Gather information and data');
     researchAgent.setAgentDetails({
         id: 'agent-research-001',
@@ -87,11 +87,24 @@ async function main() {
     researchAgent.setAttribute('latency_ms', 12500);
     researchAgent.setTokens(2500, 1200);
     researchAgent.setCost(0.0245);
+    // Child LLM call within research agent
+    const researchLlm = researchAgent.startChildLLMSpan('Research LLM Call', 'openai', 'gpt-4');
+    researchLlm.setTokens(800, 400);
+    researchLlm.setCost(0.012);
+    researchLlm.setOperation('chat');
+    researchLlm.setMessages([
+        { role: 'system', content: 'You are a research assistant specializing in AI observability.' },
+        { role: 'user', content: 'Research the best practices for AI observability in production systems.' }
+    ], [
+        { role: 'assistant', content: 'Key best practices for AI observability include: 1) Track token usage and costs per request, 2) Monitor latency at each pipeline stage, 3) Log prompts and completions for debugging, 4) Set up alerts for error rates and anomalies.' }
+    ]);
+    researchLlm.setLLMResponse('stop', 'chatcmpl-research-001');
+    researchLlm.end();
     researchAgent.end();
     // ---------------------------------------------------------------------------
-    // Agent 2: Writer Agent
+    // Agent 2: Writer Agent (child of workflow)
     // ---------------------------------------------------------------------------
-    const writerAgent = trace.startAgentSpan('Writing Phase', 'WriterAgent', 'writer');
+    const writerAgent = workflowSpan.startChildSpan('Writing Phase', { type: 'agent' });
     writerAgent.setAgent('WriterAgent', 'writer', 'Create content based on research');
     writerAgent.setAgentDetails({
         id: 'agent-writer-001',
@@ -108,11 +121,21 @@ async function main() {
     writerAgent.setAttribute('latency_ms', 18200);
     writerAgent.setTokens(1800, 3500);
     writerAgent.setCost(0.0412);
+    // Child RAG call within writer agent
+    const writerRag = writerAgent.startChildRAGSpan('Retrieve Examples', 'pinecone');
+    writerRag.setRAG('pinecone', 'vector_search', 3);
+    writerRag.setUserQuery('AI observability blog examples');
+    writerRag.setRetrievedContext([
+        { doc_id: 'ex-001', content: 'Example blog structure for technical content...', score: 0.92 },
+        { doc_id: 'ex-002', content: 'Best practices for AI documentation...', score: 0.88 },
+    ]);
+    writerRag.setAttribute('latency_ms', 145);
+    writerRag.end();
     writerAgent.end();
     // ---------------------------------------------------------------------------
-    // Agent 3: Editor Agent
+    // Agent 3: Editor Agent (child of workflow)
     // ---------------------------------------------------------------------------
-    const editorAgent = trace.startAgentSpan('Editing Phase', 'EditorAgent', 'editor');
+    const editorAgent = workflowSpan.startChildSpan('Editing Phase', { type: 'agent' });
     editorAgent.setAgent('EditorAgent', 'editor', 'Review and polish content');
     editorAgent.setAgentDetails({
         id: 'agent-editor-001',
@@ -129,6 +152,11 @@ async function main() {
     editorAgent.setAttribute('latency_ms', 8900);
     editorAgent.setTokens(3200, 1800);
     editorAgent.setCost(0.0298);
+    // Child tool call within editor agent
+    const editorTool = editorAgent.startChildToolSpan('Grammar Check', 'grammarly_api');
+    editorTool.setTool('grammarly_api', { text: 'Blog post content to check...' }, { suggestions: 5, score: 94 });
+    editorTool.setAttribute('latency_ms', 230);
+    editorTool.end();
     editorAgent.end();
     // ---------------------------------------------------------------------------
     // Complete the workflow span with aggregate metrics
@@ -193,13 +221,16 @@ async function main() {
   service.name              - Service name
 
   -------------------------------------------------------------------------
-  HIERARCHY:
+  HIERARCHY (with child spans):
   -------------------------------------------------------------------------
   Trace (content-creation-workflow)
-    └─ Orchestration Span (Content Pipeline)
-         ├─ Agent Span (Research Phase)
-         ├─ Agent Span (Writing Phase)
-         └─ Agent Span (Editing Phase)
+    └─ Orchestration Span (Content Pipeline)          [parent]
+         ├─ Agent Span (Research Phase)               [child of orchestration]
+         │    └─ LLM Span (Research LLM Call)         [child of research agent]
+         ├─ Agent Span (Writing Phase)                [child of orchestration]
+         │    └─ RAG Span (Retrieve Examples)         [child of writer agent]
+         └─ Agent Span (Editing Phase)                [child of orchestration]
+              └─ Tool Span (Grammar Check)            [child of editor agent]
 
   -------------------------------------------------------------------------
   AUTOMATIC TIMESTAMPS:

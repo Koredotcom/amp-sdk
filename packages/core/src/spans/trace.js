@@ -55,13 +55,18 @@ class Trace {
     // SPAN CREATION
     // ============================================
     /**
-     * Start a new span within this trace
+     * Start a new span within this trace (root-level span)
+     * For nested child spans, use span.startChildSpan()
      */
     startSpan(name, options = {}) {
         if (this._ended) {
             throw new Error(`Cannot add span to ended trace ${this._traceId}`);
         }
         const span = new span_1.Span(name, this._traceId, options);
+        // Set callback so child spans created via span.startChildSpan() get registered
+        span.setSpanCreatedCallback((childSpan) => {
+            this._spans.push(childSpan);
+        });
         this._spans.push(span);
         return span;
     }
@@ -75,18 +80,21 @@ class Trace {
     }
     /**
      * Start a tool span (convenience method)
+     * Sets all mandatory tool fields automatically
      */
-    startToolSpan(name, toolName) {
+    startToolSpan(name, toolName, toolType = 'function') {
         const span = this.startSpan(name, { type: 'tool' });
         span.setAttribute('tool.name', toolName);
+        span.setAttribute('tool.type', toolType);
         return span;
     }
     /**
      * Start a RAG span (convenience method)
+     * Sets all mandatory RAG fields automatically
      */
-    startRAGSpan(name, dbSystem) {
+    startRAGSpan(name, dbSystem, method = 'vector_search') {
         const span = this.startSpan(name, { type: 'rag' });
-        span.setAttribute('rag.db_system', dbSystem);
+        span.setRAG(dbSystem, method, 0); // documentsRetrieved updated by setRetrievedContext
         return span;
     }
     /**
@@ -179,6 +187,7 @@ class Trace {
     toData() {
         return {
             trace_id: this._traceId,
+            trace_name: this._name, // Include trace name for proper identification
             session_id: this._sessionId,
             start_time: this._startTime,
             end_time: this._endTime,

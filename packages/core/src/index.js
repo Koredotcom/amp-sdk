@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { AMP } from '@amp/sdk';
+ * import { AMP } from '@koreaiinc/amp-sdk';
  *
  * const amp = new AMP({ apiKey: process.env.AMP_API_KEY });
  *
