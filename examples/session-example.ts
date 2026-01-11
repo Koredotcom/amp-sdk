@@ -16,7 +16,7 @@
  * Note: Timestamps are captured automatically by the SDK.
  */
 
-import { AMP } from '../packages/core/src';
+import { AMP } from '@koreaiinc/amp-sdk';
 
 // =============================================================================
 // CONFIGURATION

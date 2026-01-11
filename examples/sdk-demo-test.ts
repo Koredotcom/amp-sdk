@@ -16,7 +16,7 @@
  *   6. Conversational Session - Multiple traces in one session (chat flow)
  */
 
-import { AMP } from '../packages/core/src';
+import { AMP } from '@koreaiinc/amp-sdk';
 
 // Get API key from environment variable
 const API_KEY = process.env.AMP_API_KEY;
