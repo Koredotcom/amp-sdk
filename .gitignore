@@ -9,6 +9,10 @@ dist/
 build/
 *.tsbuildinfo
 
+# Copied assets (generated during build, not committed)
+packages/core/examples/
+packages/core/README.md
+
 # Testing
 coverage/
 .nyc_output/

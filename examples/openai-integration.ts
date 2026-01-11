@@ -5,7 +5,7 @@
  * NOTE: This is a pattern example - OpenAI SDK is not included as a dependency.
  */
 
-import { AMP, Span } from '../packages/core/src';
+import { AMP, Span } from '@koreaiinc/amp-sdk';
 
 // Mock OpenAI types (in real usage, import from 'openai')
 interface ChatCompletion {

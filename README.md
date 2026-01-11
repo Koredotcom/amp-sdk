@@ -93,13 +93,17 @@ AMP SDK is built on **OpenTelemetry (OTEL) GenAI Semantic Conventions**, ensurin
 - **Node.js** 18+
 - An AMP account and API key
 
+**SDK Links:**
+- **npm:** <a href="https://www.npmjs.com/package/@koreaiinc/amp-sdk" target="_blank">https://www.npmjs.com/package/@koreaiinc/amp-sdk</a>
+- **GitHub:** <a href="https://github.com/Koredotcom/amp-sdk" target="_blank">https://github.com/Koredotcom/amp-sdk</a>
+
 **Getting Your API Key**:
 1. Go to <a href="https://amp.kore.ai/" target="_blank">https://amp.kore.ai/</a>
 2. Sign up or log in to your account
 3. Create a new project or select an existing one
 4. Navigate to **Settings** → **API Keys**
 5. Click **Create API Key** and copy it
-6. Your API key format: `sk-amp-{accountId}-{randomString}`
+6. Your API key will start with `sk-amp-`
 
 ### TypeScript/JavaScript
 
@@ -124,6 +128,38 @@ const amp = new AMP({
 });
 
 console.log('AMP SDK initialized successfully!');
+```
+
+### Try the Examples
+
+**Option 1: After npm install**
+```bash
+# Run demo example (tests all span types)
+AMP_API_KEY=your-api-key npx tsx node_modules/@koreaiinc/amp-sdk/examples/sdk-demo-test.ts
+
+# Or run specific examples
+AMP_API_KEY=your-api-key npx tsx node_modules/@koreaiinc/amp-sdk/examples/llm-span.ts
+AMP_API_KEY=your-api-key npx tsx node_modules/@koreaiinc/amp-sdk/examples/agent-span.ts
+```
+
+**Option 2: From GitHub clone**
+```bash
+git clone https://github.com/Koredotcom/amp-sdk.git
+cd amp-sdk
+npm install
+
+# Run examples
+AMP_API_KEY=your-api-key npm run example:demo      # All span types
+AMP_API_KEY=your-api-key npm run example:llm       # LLM spans
+AMP_API_KEY=your-api-key npm run example:agent     # Agent spans
+AMP_API_KEY=your-api-key npm run example:tool      # Tool spans
+AMP_API_KEY=your-api-key npm run example:rag       # RAG spans
+AMP_API_KEY=your-api-key npm run example:workflow  # Workflows
+```
+
+**Optional:** Override the API endpoint:
+```bash
+AMP_API_KEY=your-api-key AMP_BASE_URL=https://your-amp-instance.com npm run example:demo
 ```
 
 ---
@@ -1092,7 +1128,7 @@ const amp = new AMP({
 
 **Solution**: Verify your API key format and permissions.
 
-- Format: `sk-amp-{accountId}-{randomString}`
+- API keys start with `sk-amp-`
 - Check <a href="https://amp.kore.ai/settings" target="_blank">amp.kore.ai/settings</a> for valid keys
 
 ### Traces Not Appearing in Dashboard

@@ -10,7 +10,7 @@
  *   AMP_API_KEY=your-api-key AMP_BASE_URL=https://your-server.com npx ts-node examples/tool-span.ts
  */
 
-import { AMP } from '../packages/core/src';
+import { AMP } from '@koreaiinc/amp-sdk';
 
 // =============================================================================
 // CONFIGURATION

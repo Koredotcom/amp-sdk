@@ -2,24 +2,27 @@
   "name": "@koreaiinc/amp-sdk-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "AMP SDK workspace for TypeScript and Python SDKs - Agent Management Platform",
+  "description": "AMP SDK workspace - Agent Management Platform",
   "scripts": {
-    "generate": "stainless generate",
-    "generate:ts": "stainless generate --target typescript",
-    "generate:py": "stainless generate --target python",
-    "test": "npm run test:ts && npm run test:py",
-    "test:ts": "cd packages/typescript && npm test",
-    "test:py": "cd packages/python && pytest",
-    "lint": "cd packages/typescript && npm run lint",
-    "build": "npm run sync-readme && cd packages/core && npm run build",
+    "test": "cd packages/core && npm test",
+    "lint": "cd packages/core && npm run lint",
+    "build": "npm run sync-assets && cd packages/core && npm run build",
     "build:core": "cd packages/core && npm run build",
-    "sync-readme": "cp README.md packages/core/README.md",
-    "prepublish": "npm run sync-readme",
-    "publish:ts": "cd packages/typescript && npm publish",
-    "publish:py": "cd packages/python && twine upload dist/*"
+    "sync-assets": "cp README.md packages/core/README.md && cp -r examples packages/core/",
+    "prepublish": "npm run sync-assets",
+    "publish:npm": "npm run sync-assets && cd packages/core && npm publish",
+    "example:demo": "npx tsx examples/sdk-demo-test.ts",
+    "example:llm": "npx tsx examples/llm-span.ts",
+    "example:agent": "npx tsx examples/agent-span.ts",
+    "example:tool": "npx tsx examples/tool-span.ts",
+    "example:rag": "npx tsx examples/rag-span.ts",
+    "example:workflow": "npx tsx examples/workflow-span.ts"
+  },
+  "dependencies": {
+    "@koreaiinc/amp-sdk": "file:./packages/core"
   },
   "devDependencies": {
-    "stainless-api": "^0.0.1"
+    "tsx": "^4.7.0"
   },
   "engines": {
     "node": ">=18.0.0"
