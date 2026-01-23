@@ -1,0 +1,44 @@
+{
+  "name": "@koreaiinc/amp-sdk-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AMP SDK workspace - Agent Management Platform",
+  "scripts": {
+    "test": "cd packages/core && npm test",
+    "lint": "cd packages/core && npm run lint",
+    "build": "npm run sync-assets && cd packages/core && npm run build",
+    "build:core": "cd packages/core && npm run build",
+    "sync-assets": "cp README.md packages/core/README.md && cp -r examples packages/core/",
+    "prepublish": "npm run sync-assets",
+    "publish:npm": "npm run sync-assets && cd packages/core && npm publish",
+    "example:demo": "npx tsx examples/sdk-demo-test.ts",
+    "example:llm": "npx tsx examples/llm-span.ts",
+    "example:agent": "npx tsx examples/agent-span.ts",
+    "example:tool": "npx tsx examples/tool-span.ts",
+    "example:rag": "npx tsx examples/rag-span.ts",
+    "example:workflow": "npx tsx examples/workflow-span.ts"
+  },
+  "dependencies": {
+    "@koreaiinc/amp-sdk": "file:./packages/core"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "amp",
+    "agent-management-platform",
+    "observability",
+    "telemetry",
+    "opentelemetry",
+    "ai",
+    "llm",
+    "sdk",
+    "kore"
+  ],
+  "author": "Kore.ai",
+  "license": "MIT"
+}
+
