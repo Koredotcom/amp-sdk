@@ -1,0 +1,70 @@
+# Gitleaks configuration for AMP SDK
+# Prevents secrets, API keys, credentials, and PII from being committed
+
+title = "AMP SDK Gitleaks Config"
+
+[extend]
+# Use the default gitleaks rules as baseline
+useDefault = true
+
+# Custom rules for AMP-specific patterns
+[[rules]]
+id = "amp-api-key"
+description = "AMP API Key"
+regex = '''(?i)(amp[_-]?api[_-]?key|x-api-key)\s*[:=]\s*['"]?(sk[_-][a-zA-Z0-9]{20,})['"]?'''
+tags = ["key", "amp"]
+
+[[rules]]
+id = "kore-api-key"
+description = "Kore.ai API Key"
+regex = '''(?i)(kore[_-]?api[_-]?key)\s*[:=]\s*['"]?([a-zA-Z0-9_\-]{20,})['"]?'''
+tags = ["key", "kore"]
+
+[[rules]]
+id = "generic-api-key-value"
+description = "Generic API key assignment with real value"
+regex = '''(?i)(api[_-]?key|apikey|api[_-]?secret)\s*[:=]\s*['"]([a-zA-Z0-9_\-]{20,})['"]'''
+tags = ["key", "generic"]
+
+[[rules]]
+id = "clickhouse-password"
+description = "ClickHouse password"
+regex = '''(?i)(clickhouse[_-]?password|ch[_-]?password)\s*[:=]\s*['"]?([^\s'"]{8,})['"]?'''
+tags = ["password", "clickhouse"]
+
+[[rules]]
+id = "kafka-credentials"
+description = "Kafka credentials"
+regex = '''(?i)(kafka[_-]?(password|secret|sasl[_-]?password))\s*[:=]\s*['"]?([^\s'"]{8,})['"]?'''
+tags = ["password", "kafka"]
+
+[[rules]]
+id = "username-password-url"
+description = "URL with embedded credentials"
+regex = '''[a-zA-Z]+://[^/\s:]+:[^/\s@]+@[a-zA-Z0-9.\-]+'''
+tags = ["credential", "url"]
+
+# Allowlist - paths and patterns that are safe to ignore
+[allowlist]
+description = "Global allowlist"
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''node_modules/''',
+  '''dist/''',
+  '''\.git/''',
+  '''package-lock\.json$''',
+]
+regexTarget = "match"
+regexes = [
+  # Test fixtures and example placeholders
+  '''test-api-key''',
+  '''sk-test-[a-z]+''',
+  '''sk_test_[a-z]+''',
+  '''your-api-key-here''',
+  '''process\.env\.\w+''',
+  # SDK example placeholders
+  '''sk-\.\.\.''',
+  '''sk_\.\.\.''',
+  # UUID examples in docs/DTOs
+  '''550e8400-e29b-41d4-a716-446655440000''',
+]

@@ -440,69 +440,53 @@ components:
 
     TelemetryResponse:
       type: object
-      description: Response after telemetry batch submission
+      description: Response after telemetry ingestion (v1.3.0 - Simplified with UUID-reference pattern)
       required:
         - status
-        - timestamp
-        - accepted
-        - rejected
-        - stored
-        - duration
+        - ingestion_id
+        - format
+        - payload_size
+        - duration_ms
+        - persisted
+        - queued
       properties:
         status:
           type: string
-          description: Overall batch status
-          enum: [accepted, partial, failed]
+          description: Status of the ingestion request
+          enum: [accepted, partial, rejected]
           example: "accepted"
-        message:
+        ingestion_id:
           type: string
-          description: Human-readable message
-          example: "Batch processed successfully"
-        timestamp:
+          format: uuid
+          description: Unique identifier for this ingestion (for debugging/tracing)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        format:
           type: string
-          format: date-time
-          description: Response timestamp
-          example: "2025-12-25T10:00:05.000Z"
-        accepted:
-          type: object
-          description: Count of accepted items
-          properties:
-            traces:
-              type: integer
-              example: 1
-            transcripts:
-              type: integer
-              example: 0
-        rejected:
-          type: object
-          description: Count of rejected items
-          properties:
-            traces:
-              type: integer
-              example: 0
-            transcripts:
-              type: integer
-              example: 0
-        stored:
-          type: object
-          description: Storage statistics
-          properties:
-            records:
-              type: integer
-              description: Number of records stored
-              example: 1
-            queued:
-              type: integer
-              description: Number of records queued for processing
-              example: 0
-        duration:
+          description: Telemetry format detected/used
+          enum: [otel, transcript, agentic, ai_for_work, searchai]
+          example: "otel"
+        payload_size:
           type: integer
-          description: Processing duration in milliseconds
-          example: 125
-        batchId:
-          type: string
-          description: Batch ID for status tracking (optional)
-          example: "batch-12345"
+          description: Size of the payload in bytes
+          example: 52428
+        duration_ms:
+          type: integer
+          description: Processing time in milliseconds
+          example: 45
+        persisted:
+          type: boolean
+          description: Whether data was persisted to durable storage
+          example: true
+        queued:
+          type: boolean
+          description: Whether data was queued for async processing
+          example: true
+        warnings:
+          type: array
+          description: Any warnings during ingestion (non-fatal)
+          items:
+            type: string
+          example: []
 
     HealthResponse:
       type: object

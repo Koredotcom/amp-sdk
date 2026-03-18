@@ -743,28 +743,28 @@ export interface TelemetryPayload {
 }
 
 /**
- * API response
+ * API response (v1.3.0 - Simplified ingestion with UUID-reference pattern)
+ *
+ * The ingestion service now returns a unique ingestion_id (UUID) for each request.
+ * Processing happens asynchronously by processing-service.
  */
 export interface TelemetryResponse {
-  status: 'accepted' | 'partial' | 'failed';
-  message?: string;
-  timestamp: string;
-  accepted: {
-    traces: number;
-    transcripts: number;
-  };
-  rejected: {
-    traces: number;
-    transcripts: number;
-  };
-  stored: {
-    records: number;
-    queued: number;
-    clickhouse?: number;
-    kafka?: number;
-  };
-  duration: number;
-  batchId?: string;
+  /** Status of the ingestion request */
+  status: 'accepted' | 'partial' | 'rejected';
+  /** Unique identifier for this ingestion (UUID for debugging/tracing) */
+  ingestion_id: string;
+  /** Telemetry format detected/used (otel, transcript, agentic, ai_for_work, searchai) */
+  format: string;
+  /** Size of the payload in bytes */
+  payload_size: number;
+  /** Processing time in milliseconds */
+  duration_ms: number;
+  /** Whether data was persisted to durable storage */
+  persisted: boolean;
+  /** Whether data was queued for async processing */
+  queued: boolean;
+  /** Any warnings during ingestion (non-fatal) */
+  warnings?: string[];
 }
 
 // ============================================
