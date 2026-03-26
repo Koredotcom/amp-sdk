@@ -40,6 +40,9 @@ coverage/
 *.tmp
 .cache/
 
+# Security config (local only, not shipped to public repo)
+.gitleaks.toml
+
 # Internal docs (should not be synced to public)
 *_PROPOSAL.md
 *_INTERNAL.md

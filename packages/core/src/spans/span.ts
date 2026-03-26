@@ -429,12 +429,16 @@ export class Span {
   /**
    * Set agent info
    */
-  setAgent(name: string, type: string, goal?: string): this {
+  setAgent(name: string, type: string, goal?: string, version?: string): this {
     this._type = 'agent';
     this._attributes['gen_ai.agent.name'] = name;
     this._attributes['agent.type'] = type;
     if (goal) {
       this._attributes['agent.goal'] = goal;
+    }
+    if (version) {
+      this._attributes['gen_ai.agent.version'] = version;
+      this._attributes['agent.version'] = version;
     }
     return this;
   }
@@ -446,6 +450,7 @@ export class Span {
     id?: string;
     description?: string;
     role?: string;
+    version?: string;
     status?: 'running' | 'completed' | 'failed';
     steps?: number;
     maxIterations?: number;
@@ -453,6 +458,10 @@ export class Span {
     if (details.id) this._attributes['gen_ai.agent.id'] = details.id;
     if (details.description) this._attributes['gen_ai.agent.description'] = details.description;
     if (details.role) this._attributes['agent.role'] = details.role;
+    if (details.version) {
+      this._attributes['gen_ai.agent.version'] = details.version;
+      this._attributes['agent.version'] = details.version;
+    }
     if (details.status) this._attributes['agent.status'] = details.status;
     if (details.steps !== undefined) this._attributes['agent.steps'] = details.steps;
     if (details.maxIterations !== undefined) this._attributes['agent.max_iterations'] = details.maxIterations;

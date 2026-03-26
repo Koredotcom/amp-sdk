@@ -123,9 +123,9 @@ export class Trace {
   /**
    * Start an agent span (convenience method)
    */
-  startAgentSpan(name: string, agentName: string, agentType: string): Span {
+  startAgentSpan(name: string, agentName: string, agentType: string, version?: string): Span {
     const span = this.startSpan(name, { type: 'agent' });
-    span.setAgent(agentName, agentType);
+    span.setAgent(agentName, agentType, undefined, version);
     return span;
   }
 

@@ -146,7 +146,7 @@ export class BatchProcessor {
 
     try {
       const response = await this.sendBatch(traces);
-      this.logger.log(`Flush successful: ${response.accepted.traces} traces accepted`);
+      this.logger.log(`Flush successful: ingestion_id=${response.ingestion_id}, status=${response.status}`);
       return response;
     } catch (error) {
       this.logger.error('Flush failed:', error);

@@ -2,7 +2,8 @@
  * AMP SDK Client Tests
  */
 
-import { AMP, Trace, Span } from '../src';
+import { AMP, Trace, Span, BatchProcessor } from '../src';
+import type { TelemetryResponse, HTTPClient } from '../src';
 
 describe('AMP Client', () => {
   let amp: AMP;
@@ -131,7 +132,7 @@ describe('AMP Client', () => {
 
 describe('Trace', () => {
   it('should auto-end open spans when trace ends', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const span1 = trace.startSpan('span-1');
@@ -145,7 +146,7 @@ describe('Trace', () => {
   });
 
   it('should not allow adding spans after trace ends', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
     trace.end();
 
@@ -153,7 +154,7 @@ describe('Trace', () => {
   });
 
   it('should include trace_name in serialized data', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('my-trace-name');
     trace.end();
 
@@ -164,7 +165,7 @@ describe('Trace', () => {
 
 describe('Span', () => {
   it('should calculate duration', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
     const span = trace.startSpan('span');
     
@@ -183,7 +184,7 @@ describe('Span', () => {
   });
 
   it('should support method chaining', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const span = trace.startSpan('llm')
@@ -202,7 +203,7 @@ describe('Span', () => {
   });
 
   it('should create child spans with parentSpanId', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const parentSpan = trace.startSpan('parent-span', { type: 'agent' });
@@ -223,7 +224,7 @@ describe('Span', () => {
   });
 
   it('should create typed child spans with convenience methods', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const agentSpan = trace.startAgentSpan('agent', 'my-agent', 'orchestrator');
@@ -250,13 +251,247 @@ describe('Span', () => {
   });
 
   it('should not allow child spans on ended parent', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const parentSpan = trace.startSpan('parent');
     parentSpan.end();
 
     expect(() => parentSpan.startChildSpan('child')).toThrow();
+  });
+
+  it('should set agent version via setAgent', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startSpan('agent-span', { type: 'agent' });
+    span.setAgent('MyAgent', 'research', 'Find info', '2.1.0');
+    span.end();
+
+    const data = span.toData();
+    expect(data.attributes['gen_ai.agent.version']).toBe('2.1.0');
+    expect(data.attributes['agent.version']).toBe('2.1.0');
+    expect(data.attributes['gen_ai.agent.name']).toBe('MyAgent');
+    expect(data.attributes['agent.type']).toBe('research');
+    expect(data.attributes['agent.goal']).toBe('Find info');
+  });
+
+  it('should set agent version via setAgentDetails', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startSpan('agent-span', { type: 'agent' });
+    span.setAgent('MyAgent', 'writer');
+    span.setAgentDetails({ version: '1.5.3', role: 'content-writer', id: 'agent-001' });
+    span.end();
+
+    const data = span.toData();
+    expect(data.attributes['gen_ai.agent.version']).toBe('1.5.3');
+    expect(data.attributes['agent.version']).toBe('1.5.3');
+    expect(data.attributes['agent.role']).toBe('content-writer');
+    expect(data.attributes['gen_ai.agent.id']).toBe('agent-001');
+  });
+
+  it('should set agent version via startAgentSpan convenience method', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startAgentSpan('Agent Run', 'ResearchBot', 'research', '3.0.0');
+    span.end();
+
+    const data = span.toData();
+    expect(data.type).toBe('agent');
+    expect(data.attributes['gen_ai.agent.name']).toBe('ResearchBot');
+    expect(data.attributes['gen_ai.agent.version']).toBe('3.0.0');
+    expect(data.attributes['agent.version']).toBe('3.0.0');
+  });
+
+  it('should not set agent version when omitted', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startAgentSpan('Agent Run', 'SimpleBot', 'task');
+    span.end();
+
+    const data = span.toData();
+    expect(data.attributes['gen_ai.agent.version']).toBeUndefined();
+    expect(data.attributes['agent.version']).toBeUndefined();
+  });
+});
+
+describe('TelemetryResponse (v1.3.0)', () => {
+  it('should match the v1.3.0 ingestion response shape', () => {
+    const response: TelemetryResponse = {
+      status: 'accepted',
+      ingestion_id: '550e8400-e29b-41d4-a716-446655440000',
+      format: 'otel',
+      payload_size: 52428,
+      duration_ms: 45,
+      persisted: true,
+      queued: true,
+    };
+
+    expect(response.status).toBe('accepted');
+    expect(response.ingestion_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+    expect(response.format).toBe('otel');
+    expect(response.payload_size).toBe(52428);
+    expect(response.duration_ms).toBe(45);
+    expect(response.persisted).toBe(true);
+    expect(response.queued).toBe(true);
+    expect(response.warnings).toBeUndefined();
+  });
+
+  it('should support all valid status values', () => {
+    const statuses: TelemetryResponse['status'][] = ['accepted', 'partial', 'rejected'];
+    statuses.forEach(status => {
+      const response: TelemetryResponse = {
+        status,
+        ingestion_id: 'test-id',
+        format: 'otel',
+        payload_size: 100,
+        duration_ms: 10,
+        persisted: true,
+        queued: true,
+      };
+      expect(response.status).toBe(status);
+    });
+  });
+
+  it('should support warnings array', () => {
+    const response: TelemetryResponse = {
+      status: 'partial',
+      ingestion_id: 'test-id',
+      format: 'transcript',
+      payload_size: 1024,
+      duration_ms: 20,
+      persisted: true,
+      queued: false,
+      warnings: ['Some spans missing end_time', 'Large payload detected'],
+    };
+
+    expect(response.warnings).toHaveLength(2);
+    expect(response.warnings![0]).toBe('Some spans missing end_time');
+  });
+
+  it('should support all telemetry formats', () => {
+    const formats = ['otel', 'transcript', 'agentic', 'ai_for_work', 'searchai'];
+    formats.forEach(format => {
+      const response: TelemetryResponse = {
+        status: 'accepted',
+        ingestion_id: 'test-id',
+        format,
+        payload_size: 100,
+        duration_ms: 5,
+        persisted: true,
+        queued: true,
+      };
+      expect(response.format).toBe(format);
+    });
+  });
+});
+
+describe('BatchProcessor with mock HTTP', () => {
+  const mockResponse: TelemetryResponse = {
+    status: 'accepted',
+    ingestion_id: '550e8400-e29b-41d4-a716-446655440000',
+    format: 'otel',
+    payload_size: 1024,
+    duration_ms: 15,
+    persisted: true,
+    queued: true,
+  };
+
+  const createMockHTTPClient = (response: TelemetryResponse = mockResponse): HTTPClient => ({
+    post: jest.fn().mockResolvedValue(response),
+  });
+
+  it('should flush traces and return v1.3.0 response with ingestion_id', async () => {
+    const mockClient = createMockHTTPClient();
+    const batcher = new BatchProcessor(
+      { apiKey: 'test-api-key', disableAutoFlush: true },
+      mockClient,
+    );
+
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test-trace');
+    trace.startSpan('llm-span', { type: 'llm' }).end();
+    trace.end();
+
+    batcher.enqueue(trace);
+    const result = await batcher.flush();
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('accepted');
+    expect(result!.ingestion_id).toBe('550e8400-e29b-41d4-a716-446655440000');
+    expect(result!.format).toBe('otel');
+    expect(result!.persisted).toBe(true);
+    expect(result!.queued).toBe(true);
+    expect(mockClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('should send correct payload to ingestion endpoint', async () => {
+    const mockClient = createMockHTTPClient();
+    const batcher = new BatchProcessor(
+      { apiKey: 'test-api-key', disableAutoFlush: true },
+      mockClient,
+    );
+
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('payload-test');
+    trace.startLLMSpan('llm.completion', 'openai', 'gpt-4').setTokens(100, 50).end();
+    trace.end();
+
+    batcher.enqueue(trace);
+    await batcher.flush();
+
+    const [url, body, headers] = (mockClient.post as jest.Mock).mock.calls[0];
+    expect(url).toContain('/ingestion/api/v1/telemetry');
+    expect(headers['X-API-Key']).toBe('test-api-key');
+    expect(body.traces).toHaveLength(1);
+    expect(body.traces[0].trace_id).toBe(trace.traceId);
+  });
+
+  it('should handle rejected response', async () => {
+    const rejectedResponse: TelemetryResponse = {
+      status: 'rejected',
+      ingestion_id: 'reject-id-123',
+      format: 'otel',
+      payload_size: 0,
+      duration_ms: 2,
+      persisted: false,
+      queued: false,
+      warnings: ['Invalid payload structure'],
+    };
+
+    const mockClient = createMockHTTPClient(rejectedResponse);
+    const batcher = new BatchProcessor(
+      { apiKey: 'test-api-key', disableAutoFlush: true },
+      mockClient,
+    );
+
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('rejected-test');
+    trace.end();
+
+    batcher.enqueue(trace);
+    const result = await batcher.flush();
+
+    expect(result!.status).toBe('rejected');
+    expect(result!.ingestion_id).toBe('reject-id-123');
+    expect(result!.persisted).toBe(false);
+    expect(result!.warnings).toContain('Invalid payload structure');
+  });
+
+  it('should return null when flushing empty queue', async () => {
+    const mockClient = createMockHTTPClient();
+    const batcher = new BatchProcessor(
+      { apiKey: 'test-api-key', disableAutoFlush: true },
+      mockClient,
+    );
+
+    const result = await batcher.flush();
+    expect(result).toBeNull();
+    expect(mockClient.post).not.toHaveBeenCalled();
   });
 });
 

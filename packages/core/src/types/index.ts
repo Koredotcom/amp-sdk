@@ -504,7 +504,9 @@ export interface AgentAttributes {
   'gen_ai.agent.name'?: string;
   /** OTEL: Free-form description of the GenAI agent */
   'gen_ai.agent.description'?: string;
-  
+  /** OTEL: Agent version (semver or custom versioning) */
+  'gen_ai.agent.version'?: string;
+
   // ============================================
   // OPENINFERENCE LEGACY - Supported for backwards compatibility
   // Based on: https://github.com/Arize-ai/openinference
@@ -516,7 +518,9 @@ export interface AgentAttributes {
   'agent.name'?: string;
   /** OpenInference: Agent description */
   'agent.description'?: string;
-  
+  /** Legacy: Agent version (prefer gen_ai.agent.version for OTEL) */
+  'agent.version'?: string;
+
   // ============================================
   // OPENINFERENCE - Agent Configuration
   // ============================================
@@ -743,28 +747,28 @@ export interface TelemetryPayload {
 }
 
 /**
- * API response
+ * API response (v1.3.0 - Simplified ingestion with UUID-reference pattern)
+ *
+ * The ingestion service now returns a unique ingestion_id (UUID) for each request.
+ * Processing happens asynchronously by processing-service.
  */
 export interface TelemetryResponse {
-  status: 'accepted' | 'partial' | 'failed';
-  message?: string;
-  timestamp: string;
-  accepted: {
-    traces: number;
-    transcripts: number;
-  };
-  rejected: {
-    traces: number;
-    transcripts: number;
-  };
-  stored: {
-    records: number;
-    queued: number;
-    clickhouse?: number;
-    kafka?: number;
-  };
-  duration: number;
-  batchId?: string;
+  /** Status of the ingestion request */
+  status: 'accepted' | 'partial' | 'rejected';
+  /** Unique identifier for this ingestion (UUID for debugging/tracing) */
+  ingestion_id: string;
+  /** Telemetry format detected/used (otel, transcript, agentic, ai_for_work, searchai) */
+  format: string;
+  /** Size of the payload in bytes */
+  payload_size: number;
+  /** Processing time in milliseconds */
+  duration_ms: number;
+  /** Whether data was persisted to durable storage */
+  persisted: boolean;
+  /** Whether data was queued for async processing */
+  queued: boolean;
+  /** Any warnings during ingestion (non-fatal) */
+  warnings?: string[];
 }
 
 // ============================================
