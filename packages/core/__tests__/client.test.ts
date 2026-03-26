@@ -132,7 +132,7 @@ describe('AMP Client', () => {
 
 describe('Trace', () => {
   it('should auto-end open spans when trace ends', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const span1 = trace.startSpan('span-1');
@@ -146,7 +146,7 @@ describe('Trace', () => {
   });
 
   it('should not allow adding spans after trace ends', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
     trace.end();
 
@@ -154,7 +154,7 @@ describe('Trace', () => {
   });
 
   it('should include trace_name in serialized data', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('my-trace-name');
     trace.end();
 
@@ -165,7 +165,7 @@ describe('Trace', () => {
 
 describe('Span', () => {
   it('should calculate duration', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
     const span = trace.startSpan('span');
     
@@ -184,7 +184,7 @@ describe('Span', () => {
   });
 
   it('should support method chaining', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const span = trace.startSpan('llm')
@@ -203,7 +203,7 @@ describe('Span', () => {
   });
 
   it('should create child spans with parentSpanId', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const parentSpan = trace.startSpan('parent-span', { type: 'agent' });
@@ -224,7 +224,7 @@ describe('Span', () => {
   });
 
   it('should create typed child spans with convenience methods', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const agentSpan = trace.startAgentSpan('agent', 'my-agent', 'orchestrator');
@@ -251,13 +251,71 @@ describe('Span', () => {
   });
 
   it('should not allow child spans on ended parent', () => {
-    const amp = new AMP({ apiKey: 'test', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test');
 
     const parentSpan = trace.startSpan('parent');
     parentSpan.end();
 
     expect(() => parentSpan.startChildSpan('child')).toThrow();
+  });
+
+  it('should set agent version via setAgent', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startSpan('agent-span', { type: 'agent' });
+    span.setAgent('MyAgent', 'research', 'Find info', '2.1.0');
+    span.end();
+
+    const data = span.toData();
+    expect(data.attributes['gen_ai.agent.version']).toBe('2.1.0');
+    expect(data.attributes['agent.version']).toBe('2.1.0');
+    expect(data.attributes['gen_ai.agent.name']).toBe('MyAgent');
+    expect(data.attributes['agent.type']).toBe('research');
+    expect(data.attributes['agent.goal']).toBe('Find info');
+  });
+
+  it('should set agent version via setAgentDetails', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startSpan('agent-span', { type: 'agent' });
+    span.setAgent('MyAgent', 'writer');
+    span.setAgentDetails({ version: '1.5.3', role: 'content-writer', id: 'agent-001' });
+    span.end();
+
+    const data = span.toData();
+    expect(data.attributes['gen_ai.agent.version']).toBe('1.5.3');
+    expect(data.attributes['agent.version']).toBe('1.5.3');
+    expect(data.attributes['agent.role']).toBe('content-writer');
+    expect(data.attributes['gen_ai.agent.id']).toBe('agent-001');
+  });
+
+  it('should set agent version via startAgentSpan convenience method', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startAgentSpan('Agent Run', 'ResearchBot', 'research', '3.0.0');
+    span.end();
+
+    const data = span.toData();
+    expect(data.type).toBe('agent');
+    expect(data.attributes['gen_ai.agent.name']).toBe('ResearchBot');
+    expect(data.attributes['gen_ai.agent.version']).toBe('3.0.0');
+    expect(data.attributes['agent.version']).toBe('3.0.0');
+  });
+
+  it('should not set agent version when omitted', () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp.trace('test');
+
+    const span = trace.startAgentSpan('Agent Run', 'SimpleBot', 'task');
+    span.end();
+
+    const data = span.toData();
+    expect(data.attributes['gen_ai.agent.version']).toBeUndefined();
+    expect(data.attributes['agent.version']).toBeUndefined();
   });
 });
 
@@ -350,11 +408,11 @@ describe('BatchProcessor with mock HTTP', () => {
   it('should flush traces and return v1.3.0 response with ingestion_id', async () => {
     const mockClient = createMockHTTPClient();
     const batcher = new BatchProcessor(
-      { apiKey: 'test-key', disableAutoFlush: true },
+      { apiKey: 'test-api-key', disableAutoFlush: true },
       mockClient,
     );
 
-    const amp = new AMP({ apiKey: 'test-key', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('test-trace');
     trace.startSpan('llm-span', { type: 'llm' }).end();
     trace.end();
@@ -374,11 +432,11 @@ describe('BatchProcessor with mock HTTP', () => {
   it('should send correct payload to ingestion endpoint', async () => {
     const mockClient = createMockHTTPClient();
     const batcher = new BatchProcessor(
-      { apiKey: 'my-api-key', disableAutoFlush: true },
+      { apiKey: 'test-api-key', disableAutoFlush: true },
       mockClient,
     );
 
-    const amp = new AMP({ apiKey: 'test-key', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('payload-test');
     trace.startLLMSpan('llm.completion', 'openai', 'gpt-4').setTokens(100, 50).end();
     trace.end();
@@ -388,7 +446,7 @@ describe('BatchProcessor with mock HTTP', () => {
 
     const [url, body, headers] = (mockClient.post as jest.Mock).mock.calls[0];
     expect(url).toContain('/ingestion/api/v1/telemetry');
-    expect(headers['X-API-Key']).toBe('my-api-key');
+    expect(headers['X-API-Key']).toBe('test-api-key');
     expect(body.traces).toHaveLength(1);
     expect(body.traces[0].trace_id).toBe(trace.traceId);
   });
@@ -407,11 +465,11 @@ describe('BatchProcessor with mock HTTP', () => {
 
     const mockClient = createMockHTTPClient(rejectedResponse);
     const batcher = new BatchProcessor(
-      { apiKey: 'test-key', disableAutoFlush: true },
+      { apiKey: 'test-api-key', disableAutoFlush: true },
       mockClient,
     );
 
-    const amp = new AMP({ apiKey: 'test-key', disableAutoFlush: true });
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
     const trace = amp.trace('rejected-test');
     trace.end();
 
@@ -427,7 +485,7 @@ describe('BatchProcessor with mock HTTP', () => {
   it('should return null when flushing empty queue', async () => {
     const mockClient = createMockHTTPClient();
     const batcher = new BatchProcessor(
-      { apiKey: 'test-key', disableAutoFlush: true },
+      { apiKey: 'test-api-key', disableAutoFlush: true },
       mockClient,
     );
 

@@ -17,7 +17,9 @@ echo -e "${YELLOW}Running pre-commit checks...${NC}"
 echo -n "  Checking for secrets (gitleaks)... "
 
 if command -v gitleaks &> /dev/null; then
-  if ! gitleaks protect --staged --config .gitleaks.toml --no-banner 2>/dev/null; then
+  GITLEAKS_OPTS="--staged --no-banner"
+  [ -f .gitleaks.toml ] && GITLEAKS_OPTS="$GITLEAKS_OPTS --config .gitleaks.toml"
+  if ! gitleaks protect $GITLEAKS_OPTS 2>/dev/null; then
     echo -e "${RED}FAILED${NC}"
     echo -e "${RED}Secrets detected in staged files! Review the output above.${NC}"
     echo -e "${YELLOW}If this is a false positive, add it to .gitleaks.toml allowlist.${NC}"

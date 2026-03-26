@@ -560,9 +560,10 @@ span.setMessages(
 
 | SDK Method | OTEL Attribute | Type | Description |
 |------------|----------------|------|-------------|
-| `startAgentSpan(name, agentName, type, goal)` | `agent.name` | String | Agent identifier |
-| `startAgentSpan(name, agentName, type, goal)` | `agent.type` | String | researcher, writer, reviewer, executor |
-| `startAgentSpan(name, agentName, type, goal)` | `agent.goal` | String | Agent's objective/task |
+| `startAgentSpan(name, agentName, type, version?)` | `gen_ai.agent.name` / `agent.name` | String | Agent identifier |
+| `startAgentSpan(name, agentName, type, version?)` | `agent.type` | String | researcher, writer, reviewer, executor |
+| `startAgentSpan(name, agentName, type, version?)` | `gen_ai.agent.version` / `agent.version` | String | Agent version (semver or custom) |
+| `setAgent(name, type, goal?, version?)` | `agent.goal` | String | Agent's objective/task |
 | `setAttribute('agent.role', val)` | `agent.role` | String | Agent role in workflow |
 | `setAttribute('agent.task', val)` | `agent.task` | String | Current task description |
 | `setAttribute('agent.status', val)` | `agent.status` | String | running, completed, failed, waiting |
@@ -733,7 +734,7 @@ async function multiAgentWorkflow(task: string) {
     type: 'agent',
     parentSpanId: orchSpan.spanId  // Link to orchestrator
   });
-  writerSpan.setAgent('WriterBot', 'writer', 'Write blog post');
+  writerSpan.setAgent('WriterBot', 'writer', 'Write blog post', '2.1.0');
   await writerAgent.execute(task);
   writerSpan.end();
 
@@ -742,7 +743,7 @@ async function multiAgentWorkflow(task: string) {
     type: 'agent',
     parentSpanId: orchSpan.spanId  // Link to orchestrator
   });
-  editorSpan.setAgent('EditorBot', 'editor', 'Review and polish');
+  editorSpan.setAgent('EditorBot', 'editor', 'Review and polish', '1.3.0');
   await editorAgent.execute(task);
   editorSpan.end();
 
@@ -920,7 +921,7 @@ trace.end();
 | `trace.startLLMSpan(name, provider, model)` | `Span` | Create LLM span for model calls |
 | `trace.startToolSpan(name, toolName)` | `Span` | Create tool span for function execution |
 | `trace.startRAGSpan(name, dbSystem)` | `Span` | Create RAG span for retrieval operations |
-| `trace.startAgentSpan(name, agentName, agentType, goal?)` | `Span` | Create agent span for agent lifecycle |
+| `trace.startAgentSpan(name, agentName, agentType, version?)` | `Span` | Create agent span for agent lifecycle |
 | `trace.startSpan(name, options?)` | `Span` | Create custom/orchestration span |
 | `trace.end()` | `void` | End the trace (call after all spans end) |
 
@@ -988,8 +989,8 @@ trace.startSpan('child-operation', {
 
 | Method | Parameters | Description |
 |--------|------------|-------------|
-| `setAgent(name, type, goal?)` | `name`: agent identifier, `type`: `'research'`, `'writer'`, `'coder'`, `'planner'`, etc., `goal`: task objective | Set core agent info |
-| `setAgentDetails({...})` | `id`: unique ID, `description`: agent purpose, `role`: role in workflow, `status`: `'running'`, `'completed'`, `'failed'`, `steps`: iteration count, `maxIterations`: limit | Set agent metadata |
+| `setAgent(name, type, goal?, version?)` | `name`: agent identifier, `type`: `'research'`, `'writer'`, `'coder'`, `'planner'`, etc., `goal`: task objective, `version`: agent version (semver or custom) | Set core agent info |
+| `setAgentDetails({...})` | `id`: unique ID, `description`: agent purpose, `role`: role in workflow, `version`: agent version, `status`: `'running'`, `'completed'`, `'failed'`, `steps`: iteration count, `maxIterations`: limit | Set agent metadata |
 | `setFramework(name, version?)` | `name`: `'langchain'`, `'langgraph'`, `'autogen'`, etc., `version`: semver | Set framework info |
 | `setCost(costUsd)` | `costUsd`: total cost in USD | Set agent execution cost |
 | `setTokens(input, output)` | `input`: total input tokens, `output`: total output tokens | Set aggregate token usage |

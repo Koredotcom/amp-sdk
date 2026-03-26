@@ -504,7 +504,9 @@ export interface AgentAttributes {
   'gen_ai.agent.name'?: string;
   /** OTEL: Free-form description of the GenAI agent */
   'gen_ai.agent.description'?: string;
-  
+  /** OTEL: Agent version (semver or custom versioning) */
+  'gen_ai.agent.version'?: string;
+
   // ============================================
   // OPENINFERENCE LEGACY - Supported for backwards compatibility
   // Based on: https://github.com/Arize-ai/openinference
@@ -516,7 +518,9 @@ export interface AgentAttributes {
   'agent.name'?: string;
   /** OpenInference: Agent description */
   'agent.description'?: string;
-  
+  /** Legacy: Agent version (prefer gen_ai.agent.version for OTEL) */
+  'agent.version'?: string;
+
   // ============================================
   // OPENINFERENCE - Agent Configuration
   // ============================================
