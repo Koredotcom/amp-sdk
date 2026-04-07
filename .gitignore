@@ -23,10 +23,11 @@ coverage/
 *.test.js
 *.spec.js
 
-# Environment
+# Environment & Credentials
 .env
 .env.local
 .env.*.local
+.npmrc
 
 # IDE
 .vscode/

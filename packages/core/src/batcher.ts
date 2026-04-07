@@ -70,6 +70,7 @@ export class BatchProcessor {
   private logger: Logger;
   private isFlushing: boolean = false;
   private isShutdown: boolean = false;
+  private maxQueueSize: number;
 
   private config: {
     apiKey: string;
@@ -90,6 +91,7 @@ export class BatchProcessor {
       maxRetries: config.maxRetries || DEFAULT_MAX_RETRIES,
     };
 
+    this.maxQueueSize = config.maxQueueSize || 1000;
     this.httpClient = httpClient || new FetchHTTPClient(config.timeout || DEFAULT_TIMEOUT);
     this.logger = new Logger(config.debug || false);
 
@@ -100,25 +102,41 @@ export class BatchProcessor {
   }
 
   /**
-   * Add a trace to the queue
+   * Add a trace to the queue (non-blocking, never throws)
    */
   enqueue(trace: Trace | TraceData): void {
-    if (this.isShutdown) {
-      this.logger.warn('BatchProcessor is shutdown, ignoring trace');
-      return;
-    }
+    try {
+      if (this.isShutdown) return;
 
-    const traceData = trace instanceof Trace ? trace.toData() : trace;
-    this.queue.push(traceData);
-    this.logger.log(`Queued trace ${traceData.trace_id} (queue size: ${this.queue.length})`);
+      const traceData = trace instanceof Trace ? trace.toData() : trace;
 
-    // Flush if batch size reached
-    if (this.queue.length >= this.config.batchSize) {
-      this.flush();
-    } else if (!this.timer) {
-      // Start timeout timer
-      this.timer = setTimeout(() => this.flush(), this.config.batchTimeout);
+      // Drop oldest traces if queue is full (prevent memory leak)
+      if (this.queue.length >= this.maxQueueSize) {
+        this.queue.shift();
+        this.logger.warn(`Queue full (${this.maxQueueSize}), dropping oldest trace`);
+      }
+
+      this.queue.push(traceData);
+      this.logger.log(`Queued trace ${traceData.trace_id} (queue size: ${this.queue.length})`);
+
+      // Flush if batch size reached (fire-and-forget)
+      if (this.queue.length >= this.config.batchSize) {
+        this.flushAsync();
+      } else if (!this.timer) {
+        this.timer = setTimeout(() => this.flushAsync(), this.config.batchTimeout);
+      }
+    } catch {
+      // Silent — never break the application
     }
+  }
+
+  /**
+   * Fire-and-forget flush — never blocks, never throws
+   */
+  private flushAsync(): void {
+    this.flush().catch(() => {
+      // Already handled inside flush — this is just a safety net
+    });
   }
 
   /**
@@ -149,10 +167,9 @@ export class BatchProcessor {
       this.logger.log(`Flush successful: ingestion_id=${response.ingestion_id}, status=${response.status}`);
       return response;
     } catch (error) {
-      this.logger.error('Flush failed:', error);
-      // Put failed traces back in queue (front)
-      this.queue = [...traces, ...this.queue];
-      throw error;
+      // Drop failed traces — never re-queue to prevent snowball/memory leak
+      this.logger.warn(`Flush failed, dropped ${traces.length} traces`);
+      return null;
     } finally {
       this.isFlushing = false;
     }
@@ -201,12 +218,12 @@ export class BatchProcessor {
       this.timer = null;
     }
 
-    // Final flush
+    // Final flush (best-effort, silent on failure)
     if (this.queue.length > 0) {
       try {
         await this.flush();
-      } catch (error) {
-        this.logger.error('Final flush failed:', error);
+      } catch {
+        // Silent — shutdown should never throw
       }
     }
 

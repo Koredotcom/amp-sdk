@@ -35,35 +35,54 @@ export type { HTTPClient } from './batcher';
 export type {
   // Config
   AMPConfig,
+  AMPDefaults,
   TraceOptions,
   SpanOptions,
   SessionOptions,
-  
+  ObserveOptions,
+  SendRawOptions,
+
   // Span types
   SpanType,
   SpanStatus,
   SpanData,
   SpanAttributes,
   SpanEvent,
-  
+
   // LLM attributes
   LLMAttributes,
   ToolAttributes,
   RAGAttributes,
   AgentAttributes,
-  
+
   // Trace
   TraceData,
-  
+
   // Transcript
   TranscriptData,
   Message,
   MessageRole,
-  
+
   // API
   TelemetryPayload,
   TelemetryResponse,
 } from './types';
+
+// Context
+export { runWithContext, getContext } from './context';
+export type { AgentInfo, ServiceInfo, AMPContext } from './context';
+
+// Decorators
+export {
+  Trace as TraceDecorator,
+  LLMTrace,
+  ToolTrace,
+  RAGTrace,
+  AgentTrace,
+  getCurrentSpan,
+  getCurrentTrace,
+} from './decorators';
+export type { TraceDecoratorOptions } from './decorators';
 
 // Utilities
 export {

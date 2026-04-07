@@ -11,6 +11,8 @@ import {
   TranscriptData,
   Message,
   TelemetryPayload,
+  ObserveOptions,
+  SendRawOptions,
 } from './types';
 import { Trace, Span } from './spans';
 import { BatchProcessor, FetchHTTPClient } from './batcher';
@@ -20,6 +22,10 @@ import {
   INGEST_ENDPOINT,
   TRANSCRIPT_ENDPOINT,
 } from './constants';
+import { getContext, runWithContext, AMPContext } from './context';
+import type { AgentInfo } from './context';
+import { setGlobalAMP, getCurrentSpan, getCurrentTrace } from './decorators';
+import type { Trace as TraceType } from './spans/trace';
 
 /**
  * Session - For multi-turn conversations
@@ -105,6 +111,47 @@ export class AMP {
   private logger: Logger;
   private httpClient: FetchHTTPClient;
 
+  // ============================================
+  // STATIC — Global instance for decorators
+  // ============================================
+
+  /**
+   * Initialize a global AMP instance (required for decorators)
+   *
+   * @example
+   * ```typescript
+   * // At app startup (once)
+   * AMP.init({ apiKey: process.env.AMP_API_KEY });
+   *
+   * // Now decorators work everywhere
+   * class MyService {
+   *   @LLMTrace('chat', 'openai', 'gpt-4')
+   *   async chat(prompt: string) { ... }
+   * }
+   * ```
+   */
+  static init(config: AMPConfig): AMP {
+    const instance = new AMP(config);
+    setGlobalAMP(instance);
+    return instance;
+  }
+
+  /**
+   * Get the current active span (inside a decorated method)
+   * Returns undefined if not inside a decorated method
+   */
+  static currentSpan(): Span | undefined {
+    return getCurrentSpan();
+  }
+
+  /**
+   * Get the current active trace (inside a decorated method)
+   * Returns undefined if not inside a decorated method
+   */
+  static currentTrace(): TraceType | undefined {
+    return getCurrentTrace();
+  }
+
   constructor(config: AMPConfig) {
     if (!config.apiKey) {
       throw new Error('AMP SDK: apiKey is required');
@@ -157,6 +204,12 @@ export class AMP {
    * ```
    */
   trace(name: string, options: TraceOptions = {}): Trace {
+    // Merge context (from withAgent/withContext) into trace options
+    const ctx = getContext();
+    if (ctx?.sessionId && !options.sessionId) {
+      options.sessionId = ctx.sessionId;
+    }
+
     const trace = new Trace(name, options);
 
     // Register callback to enqueue when trace ends
@@ -175,6 +228,167 @@ export class AMP {
     const trace = this.trace(name, options);
     const span = trace.startLLMSpan('llm.completion', system, model);
     return { trace, span };
+  }
+
+  // ============================================
+  // OBSERVE API - Function wrappers
+  // ============================================
+
+  /**
+   * Observe a function — auto-creates trace + span, captures timing and errors
+   *
+   * @param name - Span/trace name
+   * @param optionsOrFn - Options or callback function
+   * @param fn - Callback function (if options provided)
+   * @returns The return value of the callback
+   *
+   * @example
+   * ```typescript
+   * const result = await amp.observe('rag-pipeline', { type: 'rag' }, async (span) => {
+   *   span.setRAG('pinecone', 'vector_search', 5);
+   *   return await retrieveAndGenerate(query);
+   * });
+   *
+   * // Without options:
+   * const result = await amp.observe('my-task', async (span) => {
+   *   return await doWork();
+   * });
+   * ```
+   */
+  async observe<T>(
+    name: string,
+    optionsOrFn: ObserveOptions | ((span: Span) => Promise<T>),
+    fn?: (span: Span) => Promise<T>,
+  ): Promise<T> {
+    const options: ObserveOptions = typeof optionsOrFn === 'function' ? {} : optionsOrFn;
+    const callback = typeof optionsOrFn === 'function' ? optionsOrFn : fn!;
+
+    const trace = this.trace(name, { sessionId: options.sessionId });
+    const span = trace.startSpan(name, { type: options.type || 'custom' });
+
+    // Apply defaults from config
+    this._applyDefaults(span);
+
+    // Apply extra attributes
+    if (options.attributes) {
+      for (const [key, value] of Object.entries(options.attributes)) {
+        span.setAttribute(key, value);
+      }
+    }
+
+    try {
+      const result = await callback(span);
+      span.end();
+      trace.end();
+      return result;
+    } catch (error) {
+      span.setError(error instanceof Error ? error.message : String(error));
+      span.end();
+      trace.end();
+      throw error;
+    }
+  }
+
+  // ============================================
+  // CONTEXT API - Agent & request context
+  // ============================================
+
+  /**
+   * Run a function with agent context — all traces/spans created inside
+   * automatically get agent metadata applied
+   *
+   * @example
+   * ```typescript
+   * amp.withAgent({ name: 'ResearchBot', type: 'research', version: '2.0' }, async () => {
+   *   const trace = amp.trace('query');
+   *   const span = trace.startSpan('search', { type: 'agent' });
+   *   // span automatically has agent.name, agent.type, agent.version set
+   * });
+   * ```
+   */
+  withAgent<T>(agent: AgentInfo, fn: () => T): T {
+    return runWithContext({ agent }, fn);
+  }
+
+  /**
+   * Run a function with request context — session, user, and metadata
+   * automatically applied to all traces/spans created inside
+   *
+   * @example
+   * ```typescript
+   * amp.withContext({ sessionId: 'user-123', userId: 'u-456' }, async () => {
+   *   const trace = amp.trace('query'); // auto-gets sessionId
+   *   // ...
+   * });
+   * ```
+   */
+  withContext<T>(ctx: Omit<AMPContext, 'agent'>, fn: () => T): T {
+    return runWithContext(ctx, fn);
+  }
+
+  /**
+   * Apply default attributes (from config.defaults + active context) to a span
+   */
+  private _applyDefaults(span: Span): void {
+    const defaults = this.config.defaults;
+    const ctx = getContext();
+
+    // Agent defaults (context overrides config)
+    const agent = ctx?.agent || defaults?.agent;
+    if (agent) {
+      span.setAgent(agent.name, agent.type || 'custom', agent.goal, agent.version);
+      if (agent.role) span.setAttribute('agent.role', agent.role);
+    }
+
+    // Service defaults
+    if (defaults?.service) {
+      if (defaults.service.name) span.setAttribute('service.name', defaults.service.name);
+      if (defaults.service.version) span.setAttribute('service.version', defaults.service.version);
+      if (defaults.service.environment) span.setAttribute('deployment.environment', defaults.service.environment);
+    }
+
+    // Context metadata
+    if (ctx?.userId) span.setAttribute('user.id', ctx.userId);
+    if (ctx?.metadata) {
+      for (const [key, value] of Object.entries(ctx.metadata)) {
+        span.setAttribute(key, value);
+      }
+    }
+  }
+
+  // ============================================
+  // RAW SEND API - For internal/non-standard formats
+  // ============================================
+
+  /**
+   * Send a raw payload directly to the ingestion endpoint.
+   * For internal Kore formats (AI for Work, SearchAI, Agentic) that
+   * the backend auto-detects and processes natively.
+   *
+   * @example
+   * ```typescript
+   * // AI for Work
+   * await amp.sendRaw({ analytics: [...] });
+   *
+   * // SearchAI
+   * await amp.sendRaw({ Question: '...', retrieved_context: { extractive: [...] } });
+   *
+   * // Agentic (Langfuse-style)
+   * await amp.sendRaw({ sessions: [...] });
+   *
+   * // With explicit format hint
+   * await amp.sendRaw(payload, { format: 'ai4w' });
+   * ```
+   */
+  async sendRaw(payload: unknown, options: SendRawOptions = {}): Promise<TelemetryResponse> {
+    const formatParam = options.format ? `?format=${options.format}` : '';
+    return this.httpClient.post(
+      `${this.config.baseURL}${this.config.ingestEndpoint}${formatParam}`,
+      payload,
+      {
+        'X-API-Key': this.config.apiKey,
+      },
+    );
   }
 
   // ============================================

@@ -319,6 +319,98 @@ describe('Span', () => {
   });
 });
 
+describe('observe()', () => {
+  it('should auto-create trace and span, return result', async () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+
+    const result = await amp.observe('my-task', async (_span) => {
+      return 'hello';
+    });
+
+    expect(result).toBe('hello');
+  });
+
+  it('should set error status on exception and rethrow', async () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+
+    await expect(
+      amp.observe('failing-task', async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+  });
+
+  it('should accept options and apply span type', async () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    let capturedSpan: any;
+
+    await amp.observe('rag-task', { type: 'rag' }, async (span) => {
+      capturedSpan = span;
+      return 'done';
+    });
+
+    expect(capturedSpan.toData().type).toBe('rag');
+  });
+
+  it('should apply defaults from config', async () => {
+    const amp = new AMP({
+      apiKey: 'test-api-key',
+      disableAutoFlush: true,
+      defaults: {
+        agent: { name: 'DefaultBot', type: 'chat', version: '1.0' },
+        service: { name: 'my-service', environment: 'prod' },
+      },
+    });
+    let capturedSpan: any;
+
+    await amp.observe('test', async (span) => {
+      capturedSpan = span;
+      return 'ok';
+    });
+
+    const data = capturedSpan.toData();
+    expect(data.attributes['gen_ai.agent.name']).toBe('DefaultBot');
+    expect(data.attributes['agent.type']).toBe('chat');
+    expect(data.attributes['gen_ai.agent.version']).toBe('1.0');
+    expect(data.attributes['service.name']).toBe('my-service');
+    expect(data.attributes['deployment.environment']).toBe('prod');
+  });
+});
+
+describe('withAgent()', () => {
+  it('should propagate agent context to observe()', async () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    let capturedSpan: any;
+
+    await amp.withAgent({ name: 'CtxBot', type: 'research', version: '3.0' }, async () => {
+      await amp.observe('agent-task', async (span) => {
+        capturedSpan = span;
+        return 'done';
+      });
+    });
+
+    const data = capturedSpan.toData();
+    expect(data.attributes['gen_ai.agent.name']).toBe('CtxBot');
+    expect(data.attributes['agent.type']).toBe('research');
+    expect(data.attributes['gen_ai.agent.version']).toBe('3.0');
+  });
+});
+
+describe('withContext()', () => {
+  it('should propagate sessionId to trace', async () => {
+    const amp = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    let capturedTrace: any;
+
+    amp.withContext({ sessionId: 'sess-999' }, () => {
+      capturedTrace = amp.trace('ctx-test');
+      capturedTrace.end();
+    });
+
+    const data = capturedTrace.toData();
+    expect(data.session_id).toBe('sess-999');
+  });
+});
+
 describe('TelemetryResponse (v1.3.0)', () => {
   it('should match the v1.3.0 ingestion response shape', () => {
     const response: TelemetryResponse = {
@@ -387,6 +479,202 @@ describe('TelemetryResponse (v1.3.0)', () => {
       };
       expect(response.format).toBe(format);
     });
+  });
+});
+
+describe('Decorators', () => {
+  // Import decorators
+  const { LLMTrace, ToolTrace, RAGTrace, AgentTrace, TraceDecorator, getCurrentSpan } = require('../src');
+
+  beforeEach(() => {
+    // Initialize global AMP for decorators
+    AMP.init({ apiKey: 'test-api-key', disableAutoFlush: true });
+  });
+
+  it('should auto-instrument async method with @LLMTrace', async () => {
+    class MyService {
+      @LLMTrace('chat', 'openai', 'gpt-4')
+      async chatCompletion(prompt: string) {
+        return `response to: ${prompt}`;
+      }
+    }
+
+    const svc = new MyService();
+    const result = await svc.chatCompletion('hello');
+    expect(result).toBe('response to: hello');
+  });
+
+  it('should auto-instrument sync method with @TraceDecorator', () => {
+    class MyService {
+      @TraceDecorator('process', { type: 'custom' })
+      processData(input: string) {
+        return input.toUpperCase();
+      }
+    }
+
+    const svc = new MyService();
+    const result = svc.processData('hello');
+    expect(result).toBe('HELLO');
+  });
+
+  it('should capture errors silently without breaking caller', async () => {
+    class MyService {
+      @LLMTrace('failing-chat', 'openai', 'gpt-4')
+      async failingMethod() {
+        throw new Error('LLM timeout');
+      }
+    }
+
+    const svc = new MyService();
+    // Error should be re-thrown to caller (their error handling stays intact)
+    await expect(svc.failingMethod()).rejects.toThrow('LLM timeout');
+  });
+
+  it('should provide currentSpan inside decorated method', async () => {
+    let capturedSpan: any = null;
+
+    class MyService {
+      @LLMTrace('chat-with-span', 'anthropic', 'claude-3')
+      async chat(_prompt: string) {
+        capturedSpan = getCurrentSpan();
+        capturedSpan?.setTokens(100, 50);
+        return 'done';
+      }
+    }
+
+    const svc = new MyService();
+    await svc.chat('test');
+
+    expect(capturedSpan).not.toBeNull();
+    const data = capturedSpan.toData();
+    expect(data.type).toBe('llm');
+    expect(data.attributes['gen_ai.system']).toBe('anthropic');
+    expect(data.attributes['gen_ai.request.model']).toBe('claude-3');
+    expect(data.attributes['gen_ai.usage.input_tokens']).toBe(100);
+  });
+
+  it('should work with @ToolTrace and auto-set success status', async () => {
+    let capturedSpan: any = null;
+
+    class MyService {
+      @ToolTrace('db-lookup', 'search_database')
+      async search(_query: string) {
+        capturedSpan = getCurrentSpan();
+        return [{ id: 1, name: 'result' }];
+      }
+    }
+
+    const svc = new MyService();
+    const result = await svc.search('test query');
+    expect(result).toEqual([{ id: 1, name: 'result' }]);
+
+    const data = capturedSpan.toData();
+    expect(data.type).toBe('tool');
+    expect(data.attributes['tool.name']).toBe('search_database');
+    expect(data.attributes['tool.status']).toBe('SUCCESS');
+  });
+
+  it('should work with @RAGTrace', async () => {
+    let capturedSpan: any = null;
+
+    class MyService {
+      @RAGTrace('context-retrieval', 'pinecone', 'vector_search')
+      async retrieve(query: string) {
+        capturedSpan = getCurrentSpan();
+        capturedSpan?.setUserQuery(query);
+        return [{ content: 'doc1', score: 0.95 }];
+      }
+    }
+
+    const svc = new MyService();
+    await svc.retrieve('what is AMP?');
+
+    const data = capturedSpan.toData();
+    expect(data.type).toBe('rag');
+    expect(data.attributes['vector_db']).toBe('pinecone');
+    expect(data.attributes['user_query']).toBe('what is AMP?');
+  });
+
+  it('should work with @AgentTrace', async () => {
+    let capturedSpan: any = null;
+
+    class MyService {
+      @AgentTrace('plan-step', 'PlannerBot', 'task_orchestrator', '2.0')
+      async executePlan(task: string) {
+        capturedSpan = getCurrentSpan();
+        return `planned: ${task}`;
+      }
+    }
+
+    const svc = new MyService();
+    const result = await svc.executePlan('research AI');
+    expect(result).toBe('planned: research AI');
+
+    const data = capturedSpan.toData();
+    expect(data.type).toBe('agent');
+    expect(data.attributes['gen_ai.agent.name']).toBe('PlannerBot');
+    expect(data.attributes['gen_ai.agent.version']).toBe('2.0');
+  });
+
+  it('should run method normally if AMP is not initialized', async () => {
+    // Reset global AMP
+    const { setGlobalAMP } = require('../src/decorators');
+    setGlobalAMP(null);
+
+    class MyService {
+      @LLMTrace('chat', 'openai', 'gpt-4')
+      async chat(prompt: string) {
+        return `no-amp: ${prompt}`;
+      }
+    }
+
+    const svc = new MyService();
+    const result = await svc.chat('hello');
+    expect(result).toBe('no-amp: hello');
+
+    // Restore for other tests
+    AMP.init({ apiKey: 'test-api-key', disableAutoFlush: true });
+  });
+});
+
+describe('Non-blocking batcher', () => {
+  it('should drop traces on flush failure instead of re-queuing', async () => {
+    const failingClient = {
+      post: jest.fn().mockRejectedValue(new Error('network error')),
+    };
+    const batcher = new BatchProcessor(
+      { apiKey: 'test-api-key', disableAutoFlush: true },
+      failingClient,
+    );
+
+    const amp2 = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    const trace = amp2.trace('drop-test');
+    trace.end();
+
+    batcher.enqueue(trace);
+    const result = await batcher.flush();
+
+    // Should return null (dropped), not throw
+    expect(result).toBeNull();
+    // Queue should be empty (not re-queued)
+    expect(batcher.queueSize).toBe(0);
+  });
+
+  it('should drop oldest when queue is full', () => {
+    const batcher = new BatchProcessor(
+      { apiKey: 'test-api-key', disableAutoFlush: true, maxQueueSize: 3, batchSize: 999 },
+      { post: jest.fn().mockResolvedValue({}) },
+    );
+
+    const amp2 = new AMP({ apiKey: 'test-api-key', disableAutoFlush: true });
+    for (let i = 0; i < 5; i++) {
+      const trace = amp2.trace(`trace-${i}`);
+      trace.end();
+      batcher.enqueue(trace);
+    }
+
+    // Should have max 3 (dropped 2 oldest)
+    expect(batcher.queueSize).toBe(3);
   });
 });
 
