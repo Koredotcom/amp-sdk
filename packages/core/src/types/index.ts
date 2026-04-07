@@ -778,6 +778,46 @@ export interface TelemetryResponse {
 /**
  * AMP SDK configuration options
  */
+/**
+ * Default attributes applied to all traces/spans
+ */
+export interface AMPDefaults {
+  /** Default agent info for all spans */
+  agent?: {
+    name: string;
+    type?: string;
+    version?: string;
+    role?: string;
+    goal?: string;
+  };
+  /** Default service info */
+  service?: {
+    name: string;
+    version?: string;
+    environment?: string;
+  };
+}
+
+/**
+ * Options for amp.observe() wrapper
+ */
+export interface ObserveOptions {
+  /** Span type */
+  type?: SpanType;
+  /** Session ID */
+  sessionId?: string;
+  /** Additional span attributes */
+  attributes?: Record<string, string | number | boolean>;
+}
+
+/**
+ * Options for amp.sendRaw() — direct payload send
+ */
+export interface SendRawOptions {
+  /** Telemetry format hint (auto-detected if omitted) */
+  format?: 'otel' | 'transcript' | 'agentic' | 'ai4w' | 'searchai';
+}
+
 export interface AMPConfig {
   /** API key (required) */
   apiKey: string;
@@ -799,10 +839,14 @@ export interface AMPConfig {
   maxRetries?: number;
   /** Request timeout in ms (default: 30000) */
   timeout?: number;
+  /** Max queue size before dropping oldest traces (default: 1000) */
+  maxQueueSize?: number;
   /** Disable auto-flush on process exit */
   disableAutoFlush?: boolean;
   /** Print traces to console before sending */
   printTraces?: boolean;
+  /** Default attributes applied to all traces/spans */
+  defaults?: AMPDefaults;
 }
 
 /**

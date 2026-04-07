@@ -16,6 +16,8 @@
   - [Supported Span Types](#supported-span-types)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+  - [Decorator Approach (Recommended)](#decorator-approach-recommended)
+  - [Manual Approach](#manual-approach)
 - [Configuration](#configuration)
   - [Required Parameters](#required-parameters)
   - [Optional Parameters](#optional-parameters)
@@ -30,7 +32,14 @@
   - [RAG Span Attributes](#rag-span-attributes)
   - [Agent Span Attributes](#agent-span-attributes)
   - [Orchestration Span Attributes](#orchestration-span-attributes)
+- [Decorator-Based Instrumentation (Recommended)](#decorator-based-instrumentation-recommended)
+  - [Setup (One Line)](#setup-one-line)
+  - [Available Decorators](#available-decorators)
+  - [Full Decorator Example](#full-decorator-example)
+  - [Accessing Span Inside Decorated Methods](#accessing-span-inside-decorated-methods)
+- [Zero-Impact Guarantee](#zero-impact-guarantee)
 - [Examples](#examples)
+  - [Example 0: Decorator-Based (Recommended)](#example-0-decorator-based-recommended)
   - [Example 1: Simple LLM Chat](#example-1-simple-llm-chat)
   - [Example 2: RAG Pipeline](#example-2-rag-pipeline)
   - [Example 3: Tool Execution](#example-3-tool-execution)
@@ -43,6 +52,7 @@
   - [Trace Methods (Creating Spans)](#trace-methods-creating-spans)
   - [Span Methods - Quick Reference](#span-methods---quick-reference)
     - [Child Span Methods](#child-span-methods-for-nested-operations)
+  - [Decorator Reference](#decorator-reference)
 - [Development (Building from Source)](#development-building-from-source)
 - [Advanced Topics](#advanced-topics)
 - [Troubleshooting](#troubleshooting)
@@ -166,12 +176,44 @@ AMP_API_KEY=your-api-key AMP_BASE_URL=https://your-amp-instance.com npm run exam
 
 ## Quick Start
 
-### 3-Line Integration
+### Decorator Approach (Recommended)
+
+The fastest way to instrument — **one line of setup, one decorator per method**:
+
+```typescript
+import { AMP, LLMTrace, ToolTrace } from '@koreaiinc/amp-sdk';
+
+// One-time setup
+AMP.init({ apiKey: process.env.AMP_API_KEY! });
+
+// Add decorators to your existing methods — that's it
+class MyService {
+  @LLMTrace('chat', 'openai', 'gpt-4')
+  async chat(prompt: string) {
+    return await openai.chat.completions.create({ model: 'gpt-4', messages: [{ role: 'user', content: prompt }] });
+  }
+
+  @ToolTrace('search', 'web_search')
+  async search(query: string) {
+    return await searchAPI.query(query);
+  }
+}
+
+// Use normally — instrumentation is automatic
+const svc = new MyService();
+await svc.chat('What is AMP?');
+```
+
+> **Requires:** `"experimentalDecorators": true` in your `tsconfig.json`
+
+### Manual Approach
+
+For more control, use the trace/span API directly:
 
 ```typescript
 import { AMP } from '@koreaiinc/amp-sdk';
 
-const amp = new AMP({ apiKey: process.env.AMP_API_KEY });
+const amp = new AMP({ apiKey: process.env.AMP_API_KEY! });
 const trace = amp.trace('user-query');
 const span = trace.startLLMSpan('chat-completion', 'openai', 'gpt-4');
 span.setTokens(150, 75);
@@ -192,9 +234,208 @@ await amp.flush();
 
 ### Next Steps
 
+- [Use Decorators](#decorator-based-instrumentation-recommended) for zero-effort instrumentation
 - [Configure the SDK](#configuration) for your environment
 - [Explore Examples](#examples) for different use cases
 - <a href="https://amp.kore.ai/dashboard" target="_blank">View Your Traces</a> in the AMP dashboard
+
+---
+
+## Decorator-Based Instrumentation (Recommended)
+
+The easiest way to instrument your application. Add a **single decorator** to any method — the SDK automatically creates traces, captures timing, records errors, and sends telemetry. **Zero code changes inside your methods.**
+
+> **Requires:** `experimentalDecorators: true` in your `tsconfig.json`
+
+### Setup (One Line)
+
+```typescript
+import { AMP } from '@koreaiinc/amp-sdk';
+
+// At app startup — one line, once
+AMP.init({ apiKey: process.env.AMP_API_KEY! });
+```
+
+That's it. Now decorators work everywhere in your app.
+
+### Available Decorators
+
+| Decorator | Use Case | Example |
+|-----------|----------|---------|
+| `@LLMTrace(name, provider, model)` | LLM/model calls | `@LLMTrace('chat', 'openai', 'gpt-4')` |
+| `@ToolTrace(name, toolName, toolType?)` | Tool/function calls | `@ToolTrace('search', 'web_search')` |
+| `@RAGTrace(name, vectorDb, method?)` | Retrieval/RAG operations | `@RAGTrace('retrieve', 'pinecone')` |
+| `@AgentTrace(name, agentName, agentType?, version?)` | Agent operations | `@AgentTrace('plan', 'PlannerBot', 'research', '2.0')` |
+| `@TraceDecorator(name?, options?)` | Generic custom operations | `@TraceDecorator('process', { type: 'custom' })` |
+
+### Full Decorator Example
+
+```typescript
+import { AMP, LLMTrace, ToolTrace, RAGTrace, AgentTrace } from '@koreaiinc/amp-sdk';
+
+// Initialize once at app startup
+AMP.init({ apiKey: process.env.AMP_API_KEY! });
+
+class AIService {
+  // LLM call — auto-captures timing, model info, errors
+  @LLMTrace('chat-completion', 'openai', 'gpt-4')
+  async chat(prompt: string) {
+    const span = AMP.currentSpan();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt }],
+    });
+    // Optionally enrich the span with token counts
+    span?.setTokens(response.usage.prompt_tokens, response.usage.completion_tokens);
+    return response.choices[0].message.content;
+  }
+
+  // Tool call — auto-sets tool.status to SUCCESS/ERROR
+  @ToolTrace('db-lookup', 'search_database')
+  async searchDatabase(query: string) {
+    return await db.query(query);
+  }
+
+  // RAG retrieval — auto-captures vector DB and method
+  @RAGTrace('context-retrieval', 'pinecone', 'vector_search')
+  async retrieveContext(query: string) {
+    const span = AMP.currentSpan();
+    span?.setUserQuery(query);
+    const results = await vectorDb.search(query);
+    span?.setRetrievedContext(results);
+    return results;
+  }
+
+  // Agent operation — auto-captures agent name, type, version
+  @AgentTrace('research-step', 'ResearchBot', 'research', '2.0')
+  async executeResearch(task: string) {
+    return await this.chat(`Research: ${task}`);
+  }
+}
+
+// Use your service normally — instrumentation is automatic
+const service = new AIService();
+const answer = await service.chat('What is AMP?');
+```
+
+### Accessing Span Inside Decorated Methods
+
+Use `AMP.currentSpan()` to optionally add custom attributes:
+
+```typescript
+@LLMTrace('chat', 'anthropic', 'claude-3')
+async chat(prompt: string) {
+  const span = AMP.currentSpan();
+
+  // Add token counts, cost, messages, etc.
+  span?.setTokens(inputTokens, outputTokens);
+  span?.setCost(0.0082);
+  span?.setMessages(inputMessages, outputMessages);
+  span?.setLLMParams({ temperature: 0.7, maxTokens: 1000 });
+
+  return result;
+}
+```
+
+If you don't need custom attributes, just add the decorator — everything else is automatic.
+
+---
+
+## Zero-Impact Guarantee
+
+The SDK is designed to **never affect your application's performance or reliability**:
+
+| Concern | How SDK Handles It |
+|---------|-------------------|
+| **Latency** | All telemetry sends are fire-and-forget (non-blocking). Your methods return immediately. |
+| **Failures** | Network errors, API timeouts — all silently caught. Your application never sees SDK errors. |
+| **Memory** | Queue has a max size (default: 1000). Oldest traces are dropped if the queue fills up — no memory leak. |
+| **Errors** | If SDK initialization fails or decorators malfunction, your method runs as-is with zero instrumentation overhead. |
+| **Retries** | Failed batches are dropped (not re-queued) to prevent cascading delays. |
+
+```typescript
+// Even if AMP is completely down, your code works fine:
+@LLMTrace('chat', 'openai', 'gpt-4')
+async chat(prompt: string) {
+  // This ALWAYS works, regardless of AMP status
+  return await openai.chat.completions.create({ ... });
+}
+```
+
+---
+
+## Metadata & Custom Attributes
+
+You can attach metadata at every level — span, trace, and session:
+
+### Span-Level Attributes
+
+```typescript
+const span = trace.startLLMSpan('chat', 'openai', 'gpt-4');
+span.setAttribute('user.id', 'user-123');
+span.setAttribute('deployment.environment', 'production');
+span.setMetadata('request_source', 'web');
+span.setMetadata('feature_flag', 'new-ui');
+```
+
+### Trace-Level Metadata
+
+```typescript
+const trace = amp.trace('user-query', {
+  sessionId: 'session-abc',
+  metadata: {
+    user_id: 'user-123',
+    tenant: 'acme-corp',
+    environment: 'production',
+  },
+});
+
+// Or set after creation
+trace.setMetadata('priority', 'high');
+trace.setMetadataAll({ region: 'us-east', version: '2.1' });
+```
+
+### Session-Level Metadata
+
+```typescript
+const session = amp.session({
+  sessionId: 'chat-session-456',
+  metadata: {
+    user_id: 'user-123',
+    channel: 'web',
+    language: 'en',
+  },
+});
+```
+
+### Default Attributes (Applied to All Spans)
+
+```typescript
+const amp = new AMP({
+  apiKey: process.env.AMP_API_KEY!,
+  defaults: {
+    agent: { name: 'MyBot', type: 'conversational', version: '1.0' },
+    service: { name: 'chat-service', version: '2.1.0', environment: 'production' },
+  },
+});
+// Every span automatically gets agent.name, service.name, etc.
+```
+
+### Context-Based Attributes (Auto-Propagated)
+
+```typescript
+// All traces/spans created inside automatically get these attributes
+amp.withContext({ sessionId: 'user-123', userId: 'u-456' }, async () => {
+  const trace = amp.trace('query'); // sessionId auto-set
+  // ...
+});
+
+amp.withAgent({ name: 'ResearchBot', type: 'research', version: '2.0' }, async () => {
+  const trace = amp.trace('query');
+  const span = trace.startSpan('search', { type: 'agent' });
+  // agent.name, agent.type, agent.version are auto-set on all spans
+});
+```
 
 ---
 
@@ -222,6 +463,7 @@ await amp.flush();
 |-----------|------|---------|-------------|
 | `batchSize` | `number` | `100` | Traces per batch |
 | `batchTimeout` | `number` | `5000` | Auto-flush timeout (ms) |
+| `maxQueueSize` | `number` | `1000` | Max queued traces before dropping oldest |
 
 #### Networking
 
@@ -609,6 +851,54 @@ All standard OTEL attributes are automatically supported. For the complete speci
 
 ## Examples
 
+### Example 0: Decorator-Based (Recommended)
+
+> **Detailed Example:** <a href="examples/decorator-example.ts" target="_blank">examples/decorator-example.ts</a>
+
+```typescript
+import { AMP, LLMTrace, ToolTrace, RAGTrace, AgentTrace, getCurrentSpan } from '@koreaiinc/amp-sdk';
+
+// One-time setup
+AMP.init({ apiKey: process.env.AMP_API_KEY! });
+
+class AIService {
+  @LLMTrace('chat', 'openai', 'gpt-4')
+  async chat(prompt: string) {
+    const span = AMP.currentSpan(); // Optional: enrich the span
+    const response = await openai.chat.completions.create({ model: 'gpt-4', messages: [{ role: 'user', content: prompt }] });
+    span?.setTokens(response.usage.prompt_tokens, response.usage.completion_tokens);
+    return response.choices[0].message.content;
+  }
+
+  @ToolTrace('db-search', 'search_users')
+  async searchUsers(query: string) {
+    return await db.query(query); // Auto-tracked, auto-SUCCESS on success
+  }
+
+  @RAGTrace('retrieve', 'pinecone', 'vector_search')
+  async retrieveContext(query: string) {
+    const span = AMP.currentSpan();
+    span?.setUserQuery(query);
+    const results = await vectorDb.search(query);
+    span?.setRetrievedContext(results);
+    return results;
+  }
+
+  @AgentTrace('research', 'ResearchBot', 'research', '2.0')
+  async research(task: string) {
+    const context = await this.retrieveContext(task);
+    return await this.chat(`Context: ${context}. Task: ${task}`);
+  }
+}
+```
+
+**Run the example:**
+```bash
+AMP_API_KEY=your-api-key npx tsx examples/decorator-example.ts
+```
+
+---
+
 ### Example 1: Simple LLM Chat
 
 > **Detailed Example:** <a href="examples/llm-span.ts" target="_blank">examples/llm-span.ts</a>
@@ -817,9 +1107,33 @@ AMP_API_KEY=your-api-key AMP_BASE_URL=https://amp.kore.ai npx tsx examples/sdk-d
 
 ### AMP Client
 
+#### `AMP.init(config: AMPConfig): AMP` (Static — for Decorators)
+
+Initializes a global AMP instance. **Required for decorators.** Call once at app startup.
+
+```typescript
+const amp = AMP.init({ apiKey: process.env.AMP_API_KEY! });
+```
+
+#### `AMP.currentSpan(): Span | undefined` (Static)
+
+Get the active span inside a decorated method. Returns `undefined` outside decorators.
+
+```typescript
+@LLMTrace('chat', 'openai', 'gpt-4')
+async chat(prompt: string) {
+  const span = AMP.currentSpan();
+  span?.setTokens(100, 50);
+}
+```
+
+#### `AMP.currentTrace(): Trace | undefined` (Static)
+
+Get the active trace inside a decorated method.
+
 #### `new AMP(config: AMPConfig)`
 
-Creates a new AMP SDK client.
+Creates a new AMP SDK client (manual usage without decorators).
 
 ```typescript
 const amp = new AMP({
@@ -1025,6 +1339,29 @@ trace.startSpan('child-operation', {
 
 ---
 
+### Decorator Reference
+
+Decorators auto-create a trace + typed span around any method. Requires `AMP.init()` and `experimentalDecorators: true`.
+
+| Decorator | Creates | Auto-Sets |
+|-----------|---------|-----------|
+| `@LLMTrace(name, provider, model)` | LLM span | `gen_ai.provider.name`, `gen_ai.request.model` |
+| `@ToolTrace(name, toolName, toolType?)` | Tool span | `tool.name`, `tool.type`, `tool.status` (SUCCESS/ERROR) |
+| `@RAGTrace(name, vectorDb, method?)` | RAG span | `vector_db`, `retrieval.method` |
+| `@AgentTrace(name, agentName, type?, version?)` | Agent span | `gen_ai.agent.name`, `agent.type`, `gen_ai.agent.version` |
+| `@TraceDecorator(name?, options?)` | Custom span | Configurable via `options.type`, `options.attributes` |
+
+**Helper functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `AMP.currentSpan()` | `Span \| undefined` | Get active span inside a decorated method |
+| `AMP.currentTrace()` | `Trace \| undefined` | Get active trace inside a decorated method |
+| `getCurrentSpan()` | `Span \| undefined` | Same as `AMP.currentSpan()` (standalone import) |
+| `getCurrentTrace()` | `Trace \| undefined` | Same as `AMP.currentTrace()` (standalone import) |
+
+---
+
 ## Development (Building from Source)
 
 If you're working directly with the SDK source code instead of installing from npm:
@@ -1067,13 +1404,19 @@ AMP_API_KEY=your-api-key npx tsx examples/sdk-demo-test.ts
 
 ### Batching and Performance
 
-The SDK automatically batches traces for efficient sending:
+The SDK is designed to have **zero impact** on your application:
+
+- **Fire-and-forget** — all telemetry sends are non-blocking. Your code never waits for HTTP calls.
+- **Drop policy** — failed batches are dropped (not re-queued) to prevent cascading delays.
+- **Bounded queue** — `maxQueueSize` caps memory usage. Oldest traces are dropped if the queue fills up.
+- **Silent errors** — SDK errors are logged as warnings, never thrown into your code.
 
 ```typescript
 const amp = new AMP({
   apiKey: 'sk-amp-xxxxxx',
   batchSize: 100,        // Send 100 traces per batch
   batchTimeout: 5000,    // Auto-flush after 5 seconds
+  maxQueueSize: 1000,    // Drop oldest if queue exceeds this (prevents memory leak)
 });
 ```
 
@@ -1090,18 +1433,29 @@ span
 
 ### Error Handling
 
+The SDK handles all errors silently — your application is never affected:
+
 ```typescript
+// With decorators: errors are captured but re-thrown to your handler
+@LLMTrace('chat', 'openai', 'gpt-4')
+async chat(prompt: string) {
+  // If this throws, AMP captures the error in the span
+  // but still re-throws it to YOUR catch block
+  return await openai.chat.completions.create({ ... });
+}
+
+// With manual API: same behavior
+const trace = amp.trace('operation');
+const span = trace.startLLMSpan('llm', 'openai', 'gpt-4');
 try {
-  const trace = amp.trace('operation');
-  const span = trace.startLLMSpan('llm', 'openai', 'gpt-4');
-
-  // Your logic here
-
+  // Your logic
   span.end();
   trace.end();
 } catch (error) {
-  console.error('Trace failed:', error);
-  // Traces are queued, so errors don't block your application
+  span.setError(error.message);
+  span.end();
+  trace.end();
+  throw error; // Your error handling stays intact
 }
 ```
 
@@ -1153,15 +1507,18 @@ const amp = new AMP({
 
 ### High Memory Usage
 
-**Solution**: Reduce `batchSize` or call `amp.flush()` more frequently.
+**Solution**: The SDK now has a bounded queue with automatic overflow protection. Tune with `maxQueueSize`:
 
 ```typescript
 const amp = new AMP({
   apiKey: '...',
-  batchSize: 50,      // Reduce from default 100
-  batchTimeout: 3000, // Flush more frequently
+  batchSize: 50,        // Reduce from default 100
+  batchTimeout: 3000,   // Flush more frequently
+  maxQueueSize: 500,    // Lower max queue (default: 1000)
 });
 ```
+
+If queue fills up, the oldest traces are dropped automatically — no memory leak.
 
 ---
 
