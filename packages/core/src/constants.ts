@@ -40,4 +40,4 @@ export const DEFAULT_TIMEOUT = 30000;
 export const SDK_NAME = 'amp-sdk-typescript';
 
 /** SDK version */
-export const SDK_VERSION = '1.1.0';
+export const SDK_VERSION = '1.1.1';
