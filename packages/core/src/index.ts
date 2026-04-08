@@ -57,6 +57,7 @@ export type {
 
   // Trace
   TraceData,
+  TraceMessage,
 
   // Transcript
   TranscriptData,

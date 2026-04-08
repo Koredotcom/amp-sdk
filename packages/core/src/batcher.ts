@@ -71,6 +71,7 @@ export class BatchProcessor {
   private isFlushing: boolean = false;
   private isShutdown: boolean = false;
   private maxQueueSize: number;
+  private _payloadAttributes: Record<string, string | number | boolean> = {};
 
   private config: {
     apiKey: string;
@@ -99,6 +100,21 @@ export class BatchProcessor {
     if (!config.disableAutoFlush && typeof process !== 'undefined') {
       this.setupAutoFlush();
     }
+  }
+
+  /**
+   * Set payload-level attributes (session attributes)
+   * These are included at the top level of the telemetry payload
+   */
+  setPayloadAttributes(attributes: Record<string, string | number | boolean>): void {
+    Object.assign(this._payloadAttributes, attributes);
+  }
+
+  /**
+   * Get current payload-level attributes
+   */
+  getPayloadAttributes(): Record<string, string | number | boolean> {
+    return { ...this._payloadAttributes };
   }
 
   /**
@@ -179,7 +195,10 @@ export class BatchProcessor {
    * Send batch to API with retries
    */
   private async sendBatch(traces: TraceData[]): Promise<TelemetryResponse> {
-    const payload: TelemetryPayload = { traces };
+    const payload: TelemetryPayload = {
+      ...(Object.keys(this._payloadAttributes).length > 0 && { attributes: this._payloadAttributes }),
+      traces,
+    };
 
     // Debug only: dump actual payload sent to ingest API
     this.logger.log(`POST ${this.config.baseURL}${this.config.ingestEndpoint}`);

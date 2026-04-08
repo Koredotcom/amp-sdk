@@ -3,7 +3,7 @@
  * Represents a complete operation (e.g., user request → response)
  */
 
-import { TraceData, SpanStatus, TraceOptions, SpanOptions } from '../types';
+import { TraceData, TraceMessage, SpanStatus, TraceOptions, SpanOptions } from '../types';
 import { generateTraceId, generateSessionId, now } from '../utils';
 import { Span } from './span';
 
@@ -30,6 +30,9 @@ export class Trace {
   private _endTime?: string;
   private _status: SpanStatus = 'unset';
   private _spans: Span[] = [];
+  private _attributes: Record<string, string | number | boolean> = {};
+  private _input?: TraceMessage;
+  private _output?: TraceMessage;
   private _metadata: Record<string, string | number | boolean>;
   private _ended: boolean = false;
   private _onEnd?: (trace: Trace) => void;
@@ -40,6 +43,9 @@ export class Trace {
     this._name = name;
     this._startTime = now();
     this._metadata = options.metadata || {};
+    if (options.attributes) {
+      this._attributes = { ...options.attributes };
+    }
   }
 
   // ============================================
@@ -127,6 +133,46 @@ export class Trace {
     const span = this.startSpan(name, { type: 'agent' });
     span.setAgent(agentName, agentType, undefined, version);
     return span;
+  }
+
+  // ============================================
+  // ATTRIBUTES
+  // ============================================
+
+  /**
+   * Set a single trace-level attribute
+   */
+  setAttribute(key: string, value: string | number | boolean): this {
+    this._attributes[key] = value;
+    return this;
+  }
+
+  /**
+   * Set multiple trace-level attributes
+   */
+  setAttributes(attributes: Record<string, string | number | boolean>): this {
+    Object.assign(this._attributes, attributes);
+    return this;
+  }
+
+  // ============================================
+  // INPUT / OUTPUT
+  // ============================================
+
+  /**
+   * Set trace-level input message
+   */
+  setInput(role: string, content: string): this {
+    this._input = { role, content };
+    return this;
+  }
+
+  /**
+   * Set trace-level output message
+   */
+  setOutput(role: string, content: string): this {
+    this._output = { role, content };
+    return this;
   }
 
   // ============================================
@@ -225,12 +271,15 @@ export class Trace {
   toData(): TraceData {
     return {
       trace_id: this._traceId,
-      trace_name: this._name, // Include trace name for proper identification
+      trace_name: this._name,
       session_id: this._sessionId,
       start_time: this._startTime,
       end_time: this._endTime,
       status: this._status,
       spans: this._spans.map(s => s.toData()),
+      attributes: Object.keys(this._attributes).length > 0 ? this._attributes : undefined,
+      input: this._input,
+      output: this._output,
       metadata: Object.keys(this._metadata).length > 0 ? this._metadata : undefined,
     };
   }

@@ -695,6 +695,14 @@ export interface SpanData {
 // ============================================
 
 /**
+ * Trace input/output message (conversation turn at trace level)
+ */
+export interface TraceMessage {
+  role: string;
+  content: string;
+}
+
+/**
  * Trace data structure (what gets sent to API)
  */
 export interface TraceData {
@@ -705,6 +713,9 @@ export interface TraceData {
   end_time?: string;
   status: SpanStatus;
   spans: SpanData[];
+  attributes?: Record<string, string | number | boolean>;
+  input?: TraceMessage;
+  output?: TraceMessage;
   metadata?: Record<string, string | number | boolean>;
 }
 
@@ -742,6 +753,8 @@ export interface TranscriptData {
  */
 export interface TelemetryPayload {
   accountId?: string;
+  /** Session-level attributes (top-level in payload) */
+  attributes?: Record<string, string | number | boolean>;
   traces?: TraceData[];
   transcripts?: TranscriptData[];
 }
@@ -857,6 +870,8 @@ export interface TraceOptions {
   traceId?: string;
   /** Session ID (auto-generated if not provided) */
   sessionId?: string;
+  /** Trace-level attributes */
+  attributes?: Record<string, string | number | boolean>;
   /** Additional metadata */
   metadata?: Record<string, string | number | boolean>;
 }
@@ -883,6 +898,8 @@ export interface SpanOptions {
 export interface SessionOptions {
   /** Custom session ID (auto-generated if not provided) */
   sessionId?: string;
+  /** Session-level attributes (sent at payload level) */
+  attributes?: Record<string, string | number | boolean>;
   /** Additional metadata */
   metadata?: Record<string, string | number | boolean>;
 }

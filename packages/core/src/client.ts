@@ -32,6 +32,7 @@ import type { Trace as TraceType } from './spans/trace';
  */
 export class Session {
   private _sessionId: string;
+  private _attributes: Record<string, string | number | boolean>;
   private _metadata: Record<string, string | number | boolean>;
   private _client: AMP;
   private _conversationTurn: number = 0;
@@ -39,6 +40,7 @@ export class Session {
   constructor(client: AMP, options: SessionOptions = {}) {
     this._client = client;
     this._sessionId = options.sessionId || generateSessionId();
+    this._attributes = options.attributes || {};
     this._metadata = options.metadata || {};
   }
 
@@ -46,10 +48,43 @@ export class Session {
     return this._sessionId;
   }
 
+  // ============================================
+  // ATTRIBUTES
+  // ============================================
+
+  /**
+   * Set a single session-level attribute
+   */
+  setAttribute(key: string, value: string | number | boolean): this {
+    this._attributes[key] = value;
+    return this;
+  }
+
+  /**
+   * Set multiple session-level attributes
+   */
+  setAttributes(attributes: Record<string, string | number | boolean>): this {
+    Object.assign(this._attributes, attributes);
+    return this;
+  }
+
+  /**
+   * Get session attributes (read-only copy)
+   */
+  get attributes(): Record<string, string | number | boolean> {
+    return { ...this._attributes };
+  }
+
   /**
    * Start a trace within this session
+   * Session attributes are propagated to the batcher for payload-level inclusion
    */
   trace(name: string, options: Omit<TraceOptions, 'sessionId'> = {}): Trace {
+    // Propagate session attributes to the batcher
+    if (Object.keys(this._attributes).length > 0) {
+      this._client.setSessionAttributes(this._attributes);
+    }
+
     return this._client.trace(name, {
       ...options,
       sessionId: this._sessionId,
@@ -64,10 +99,10 @@ export class Session {
 
     const transcript: TranscriptData = {
       session_id: this._sessionId,
-      conversation_id: this._sessionId, // Use session as conversation
+      conversation_id: this._sessionId,
       conversation_turn: this._conversationTurn,
       messages,
-      metadata: this._metadata,
+      metadata: { ...this._attributes, ...this._metadata },
     };
 
     await this._client.sendTranscript(transcript);
@@ -78,7 +113,6 @@ export class Session {
    */
   end(): void {
     // Sessions are implicit - nothing to explicitly end
-    // Could add session.end event if needed
   }
 }
 
@@ -150,6 +184,14 @@ export class AMP {
    */
   static currentTrace(): TraceType | undefined {
     return getCurrentTrace();
+  }
+
+  /**
+   * Set session-level attributes on the batcher (payload-level)
+   * @internal Used by Session class
+   */
+  setSessionAttributes(attributes: Record<string, string | number | boolean>): void {
+    this.batcher.setPayloadAttributes(attributes);
   }
 
   constructor(config: AMPConfig) {
@@ -451,7 +493,9 @@ export class AMP {
    * Send traces immediately (bypass batching)
    */
   async send(traces: Trace[]): Promise<TelemetryResponse> {
+    const payloadAttributes = this.batcher.getPayloadAttributes();
     const payload: TelemetryPayload = {
+      ...(Object.keys(payloadAttributes).length > 0 && { attributes: payloadAttributes }),
       traces: traces.map(t => t.toData()),
     };
 
