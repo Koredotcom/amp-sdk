@@ -208,6 +208,19 @@ components:
       type: object
       description: Telemetry batch payload containing traces and/or transcripts
       properties:
+        attributes:
+          type: object
+          description: |
+            Session-level attributes applied to the entire payload.
+            These describe the session context (customer tier, region, channel, etc.)
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+          example:
+            customer_tier: "standard"
+            region: "nz"
         traces:
           type: array
           description: Array of OTEL traces (max 100 per batch)
@@ -221,6 +234,9 @@ components:
           items:
             $ref: '#/components/schemas/Transcript'
       example:
+        attributes:
+          customer_tier: "standard"
+          region: "nz"
         traces:
           - trace_id: "trace-001"
             session_id: "session-001"
@@ -266,6 +282,43 @@ components:
           description: Trace status
           enum: [ok, error, unset]
           example: "ok"
+        attributes:
+          type: object
+          description: |
+            Trace-level attributes (experiment group, risk scores, etc.)
+            These describe the trace context, separate from span-level attributes.
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+          example:
+            experiment_group: "A"
+            risk_scr: 2.0
+        input:
+          type: object
+          description: Trace-level input message (the user's query/request)
+          properties:
+            role:
+              type: string
+              description: Message role (e.g., human, user, system)
+              example: "human"
+            content:
+              type: string
+              description: Message content
+              example: "What is AI observability?"
+        output:
+          type: object
+          description: Trace-level output message (the AI's response)
+          properties:
+            role:
+              type: string
+              description: Message role (e.g., AI, assistant)
+              example: "AI"
+            content:
+              type: string
+              description: Message content
+              example: "AI observability is..."
         metadata:
           type: object
           description: Additional trace metadata
